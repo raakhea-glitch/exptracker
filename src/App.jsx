@@ -72,7 +72,7 @@ const todayStr = () => new Date().toLocaleDateString("id-ID",{weekday:"long",day
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 const C = {
-  red:C2="#EF4444", redD:"rgba(239,68,68,.12)", redB:"rgba(239,68,68,.3)",
+  red:"#EF4444", redD:"rgba(239,68,68,.12)", redB:"rgba(239,68,68,.3)",
   or:"#F97316", orD:"rgba(249,115,22,.12)", orB:"rgba(249,115,22,.3)",
   yl:"#EAB308", ylD:"rgba(234,179,8,.12)",  ylB:"rgba(234,179,8,.3)",
   bl:"#3B82F6", blD:"rgba(59,130,246,.12)", blB:"rgba(59,130,246,.3)",
