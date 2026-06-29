@@ -61,9 +61,17 @@ function enrich(item) {
 }
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
-const SK = "expt_v7";
-const load    = () => { try { return JSON.parse(localStorage.getItem(SK)||"[]"); } catch { return []; } };
-const persist = d  => { try { localStorage.setItem(SK, JSON.stringify(d)); } catch {} };
+const API = import.meta.env.VITE_API_URL || "";
+async function apiFetch(method, path, body) {
+  const res = await fetch(`${API}/api${path}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.message || "Error");
+  return data;
+}
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 const fmtRp = n => "Rp "+Number(n).toLocaleString("id-ID");
@@ -571,20 +579,51 @@ function FormModal({ initial, onSave, onClose }) {
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 const BLANK = { barcode:"",name:"",expDate:"",canReturn:true,isImport:false,price:"",qty:"1",gondola:null,section:null };
 
+// map backend field names ke frontend field names
+function mapItem(i) {
+  return {
+    ...i,
+    id:        i.id,
+    expDate:   i.exp_date,
+    canReturn: i.can_return,
+    isImport:  i.is_import,
+    markedDown:i.marked_down,
+    qty:       i.qty,
+    price:     i.price,
+  };
+}
+
 export default function App() {
-  const [raw,      setRaw]      = useState(load);
+  const [raw,      setRaw]      = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [apiOk,    setApiOk]    = useState(true);
   const [formData, setFormData] = useState(null);
   const [search,   setSearch]   = useState("");
-  const [tab,      setTab]      = useState("today");   // today | all | gondola | analytics
-  const [filterG,  setFilterG]  = useState(null);      // gondola key filter
-  const [filterS,  setFilterS]  = useState(null);      // section filter
+  const [tab,      setTab]      = useState("today");
+  const [filterG,  setFilterG]  = useState(null);
+  const [filterS,  setFilterS]  = useState(null);
   const [filterType,setFilterType]=useState("all");
   const [phaseF,   setPhaseF]   = useState("all");
   const [sortBy,   setSortBy]   = useState("urgency");
   const [toast,    setToast]    = useState(null);
 
-  useEffect(()=>persist(raw),[raw]);
   const t_ = (m,type="ok") => { setToast({m,type}); setTimeout(()=>setToast(null),2500); };
+
+  // Fetch dari backend
+  const fetchItems = async () => {
+    try {
+      const res = await apiFetch("GET", "/items");
+      setRaw(res.data.map(mapItem));
+      setApiOk(true);
+    } catch(e) {
+      setApiOk(false);
+      t_("Gagal konek ke server","err");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(()=>{ fetchItems(); },[]);
 
   const items = useMemo(()=>raw.map(enrich),[raw]);
 
@@ -592,17 +631,32 @@ export default function App() {
   const openEdit = item  => setFormData({...item, price:item.price||"", qty:String(item.qty||1)});
   const close    = ()    => setFormData(null);
 
-  const saveItem = data => {
-    if (data.id) { setRaw(p=>p.map(i=>i.id===data.id?{...i,...data}:i)); t_("Diupdate ✅"); }
-    else          { setRaw(p=>[{...data,id:Date.now(),markedDown:false},...p]); t_("Ditambahkan ✅"); }
-    close();
+  const saveItem = async data => {
+    try {
+      const payload = {
+        barcode: data.barcode, name: data.name,
+        exp_date: data.expDate, price: parseFloat(data.price)||0,
+        qty: parseInt(data.qty)||0, can_return: data.canReturn,
+        is_import: data.isImport, gondola: data.gondola||null,
+        section: data.section||null, notes: data.notes||"",
+      };
+      if (data.id) {
+        await apiFetch("PUT", `/items/${data.id}`, payload);
+        t_("Diupdate ✅");
+      } else {
+        await apiFetch("POST", "/items", payload);
+        t_("Ditambahkan ✅");
+      }
+      fetchItems();
+      close();
+    } catch(e) { t_(e.message,"err"); }
   };
 
-  const onMd  = id  => { setRaw(p=>p.map(i=>i.id===id?{...i,markedDown:!i.markedDown}:i)); t_("Status MD diupdate"); };
-  const onQty = (id,v)=>{ setRaw(p=>p.map(i=>i.id===id?{...i,qty:v}:i)); };
-  const onPull= id  => { setRaw(p=>p.map(i=>i.id===id?{...i,pulled:true}:i)); t_("✅ Sudah ditarik"); };
-  const onRet = id  => { setRaw(p=>p.map(i=>i.id===id?{...i,returned:true}:i)); t_("✅ Sudah diretur"); };
-  const onDel = id  => { if(!confirm("Hapus?"))return; setRaw(p=>p.filter(i=>i.id!==id)); t_("Dihapus"); };
+  const onMd  = async id => { try { await apiFetch("PATCH",`/items/${id}/markdown`); fetchItems(); t_("Status MD diupdate"); } catch(e){t_(e.message,"err");} };
+  const onQty = async (id,v) => { try { await apiFetch("PATCH",`/items/${id}/qty`,{qty:v}); fetchItems(); } catch(e){t_(e.message,"err");} };
+  const onPull= async id => { try { await apiFetch("PATCH",`/items/${id}/pull`); fetchItems(); t_("✅ Sudah ditarik"); } catch(e){t_(e.message,"err");} };
+  const onRet = async id => { try { await apiFetch("PATCH",`/items/${id}/return`); fetchItems(); t_("✅ Sudah diretur"); } catch(e){t_(e.message,"err");} };
+  const onDel = async id => { if(!confirm("Hapus?"))return; try { await apiFetch("DELETE",`/items/${id}`); fetchItems(); t_("Dihapus"); } catch(e){t_(e.message,"err");} };
 
   const cardProps = { onMd, onQty, onPull, onRet, onEdit:openEdit, onDel };
 
@@ -636,6 +690,25 @@ export default function App() {
   }),[items]);
 
   const activeGLabel = filterG ? (filterS ? `${filterG} › ${filterS}` : `Gondola ${filterG}`) : null;
+
+  // Loading screen
+  if (loading) return (
+    <div style={{ minHeight:"100vh",background:"#0B1120",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,fontFamily:"system-ui" }}>
+      <div style={{ fontSize:40 }}>📦</div>
+      <div style={{ color:"#6366F1",fontWeight:700,fontSize:16 }}>ExpTracker</div>
+      <div style={{ color:"#334155",fontSize:12 }}>Memuat data...</div>
+    </div>
+  );
+
+  // No API connection
+  if (!apiOk && raw.length===0) return (
+    <div style={{ minHeight:"100vh",background:"#0B1120",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,fontFamily:"system-ui",padding:20 }}>
+      <div style={{ fontSize:40 }}>🔌</div>
+      <div style={{ color:"#EF4444",fontWeight:700,fontSize:16 }}>Tidak bisa konek ke server</div>
+      <div style={{ color:"#334155",fontSize:12,textAlign:"center" }}>Pastikan VITE_API_URL sudah diset di Vercel</div>
+      <button onClick={fetchItems} style={{ background:"#6366F1",border:"none",color:"#fff",padding:"10px 20px",borderRadius:9,fontWeight:700,cursor:"pointer" }}>Coba Lagi</button>
+    </div>
+  );
 
   return (
     <div style={{ minHeight:"100vh",background:C.base,fontFamily:"system-ui,'Inter',sans-serif",color:"#E2E8F0",paddingBottom:84 }}>
