@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 
 // ─── Gondola config — bisa disesuaikan ───────────────────────────────────────
 const GONDOLAS = {
@@ -482,9 +482,148 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onEdit, onDel }) {
   );
 }
 
+
+// ─── Barcode Scanner Component ────────────────────────────────────────────────
+function BarcodeScanner({ onResult, onClose }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [error, setError] = useState(null);
+  const [scanning, setScanning] = useState(false);
+
+  useEffect(() => {
+    startCamera();
+    return () => stopCamera();
+  }, []);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+        setScanning(true);
+        scanFrame();
+      }
+    } catch(e) {
+      setError("Tidak bisa akses kamera. Izinkan akses kamera di browser.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+    }
+  };
+
+  const scanFrame = async () => {
+    if (!videoRef.current) return;
+
+    // Pakai BarcodeDetector API (Chrome Android support)
+    if ("BarcodeDetector" in window) {
+      const detector = new window.BarcodeDetector({
+        formats: ["ean_13","ean_8","code_128","code_39","qr_code","upc_a","upc_e"]
+      });
+
+      const detect = async () => {
+        if (!videoRef.current || videoRef.current.readyState !== 4) {
+          requestAnimationFrame(detect);
+          return;
+        }
+        try {
+          const barcodes = await detector.detect(videoRef.current);
+          if (barcodes.length > 0) {
+            const code = barcodes[0].rawValue;
+            stopCamera();
+            onResult(code);
+            return;
+          }
+        } catch(e) {}
+        requestAnimationFrame(detect);
+      };
+      videoRef.current.addEventListener("playing", detect);
+    } else {
+      setError("Browser tidak support scan otomatis. Ketik barcode manual atau coba Chrome di Android.");
+    }
+  };
+
+  return (
+    <div style={{ position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,.95)",display:"flex",flexDirection:"column" }}>
+      {/* Header */}
+      <div style={{ padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"rgba(0,0,0,.5)" }}>
+        <span style={{ fontWeight:800,fontSize:15,color:"#fff" }}>📷 Scan Barcode</span>
+        <button onClick={()=>{ stopCamera(); onClose(); }} style={{ background:"rgba(255,255,255,.1)",border:"none",color:"#fff",width:34,height:34,borderRadius:17,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center" }}>×</button>
+      </div>
+
+      {/* Camera view */}
+      <div style={{ flex:1,position:"relative",overflow:"hidden" }}>
+        <video ref={videoRef} style={{ width:"100%",height:"100%",objectFit:"cover" }} playsInline muted/>
+
+        {/* Scan overlay */}
+        {scanning && !error && (
+          <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+            {/* Dark overlay with hole */}
+            <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,.5)" }}/>
+            {/* Scan box */}
+            <div style={{ position:"relative",width:"75%",maxWidth:300,aspectRatio:"3/2",zIndex:10 }}>
+              {/* Corners */}
+              {[["0,0","top,left"],["0,auto","top,right"],["auto,0","bottom,left"],["auto,auto","bottom,right"]].map(([pos,label],i)=>{
+                const [t,r,b,l] = [
+                  i<2?"0":undefined, i%2===1?"0":undefined,
+                  i>=2?"0":undefined, i%2===0?"0":undefined
+                ];
+                return (
+                  <div key={i} style={{ position:"absolute",top:t,right:r,bottom:b,left:l,width:24,height:24,
+                    borderTop: (i<2)?"3px solid #6366F1":undefined,
+                    borderBottom: (i>=2)?"3px solid #6366F1":undefined,
+                    borderLeft: (i%2===0)?"3px solid #6366F1":undefined,
+                    borderRight: (i%2===1)?"3px solid #6366F1":undefined,
+                  }}/>
+                );
+              })}
+              {/* Scan line animation */}
+              <div style={{ position:"absolute",left:0,right:0,height:2,background:"#6366F1",boxShadow:"0 0 8px #6366F1",animation:"scanline 1.5s ease-in-out infinite" }}/>
+            </div>
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,padding:24,textAlign:"center" }}>
+            <div style={{ fontSize:40 }}>📵</div>
+            <div style={{ color:"#EF4444",fontWeight:700,fontSize:14 }}>{error}</div>
+            <button onClick={()=>{ stopCamera(); onClose(); }} style={{ background:"#6366F1",border:"none",color:"#fff",padding:"10px 20px",borderRadius:9,fontWeight:700,cursor:"pointer" }}>
+              Ketik Manual
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom hint */}
+      {scanning && !error && (
+        <div style={{ padding:"14px 16px",textAlign:"center",background:"rgba(0,0,0,.5)" }}>
+          <div style={{ color:"#94A3B8",fontSize:12 }}>Arahkan kamera ke barcode produk</div>
+          <div style={{ color:"#475569",fontSize:10,marginTop:4 }}>Scan otomatis saat terdeteksi</div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes scanline {
+          0% { top: 0%; }
+          50% { top: calc(100% - 2px); }
+          100% { top: 0%; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 // ─── Form Modal ───────────────────────────────────────────────────────────────
 function FormModal({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial);
+  const [showScanner, setShowScanner] = useState(false);
   const set = (k,v) => setF(p=>({...p,[k]:v}));
   const days   = f.expDate ? getDays(f.expDate) : null;
   const mdPrev = days!==null ? getMd(days, f.isImport) : null;
@@ -495,6 +634,12 @@ function FormModal({ initial, onSave, onClose }) {
   };
 
   return (
+    {showScanner && (
+      <BarcodeScanner
+        onResult={code => { set("barcode", code); setShowScanner(false); }}
+        onClose={() => setShowScanner(false)}
+      />
+    )}
     <div style={{ position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,.8)",display:"flex",alignItems:"flex-end" }}>
       <div style={{ width:"100%",maxHeight:"94vh",overflowY:"auto",background:"#0D1626",borderRadius:"16px 16px 0 0",padding:"16px 14px 36px" }}>
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
@@ -515,9 +660,30 @@ function FormModal({ initial, onSave, onClose }) {
         {/* Fields */}
         <div style={{ display:"grid",gap:9,marginBottom:10 }}>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:7 }}>
-            <label style={{ fontSize:10,color:"#475569" }}>BARCODE *
-              <input value={f.barcode} onChange={e=>set("barcode",e.target.value)} placeholder="Scan / ketik" style={{ display:"block",width:"100%",marginTop:4,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,padding:"9px 10px",color:"#E2E8F0",fontSize:12,fontFamily:"monospace" }}/>
-            </label>
+            <div>
+              <div style={{ fontSize:10,color:"#475569",marginBottom:4 }}>BARCODE *</div>
+              <div style={{ display:"flex",gap:6 }}>
+                <input
+                  value={f.barcode}
+                  onChange={e=>set("barcode",e.target.value)}
+                  placeholder="Scan / ketik"
+                  style={{ flex:1,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,padding:"9px 10px",color:"#E2E8F0",fontSize:12,fontFamily:"monospace" }}
+                />
+                <button
+                  type="button"
+                  onClick={()=>setShowScanner(true)}
+                  style={{ width:40,height:40,background:"linear-gradient(135deg,#6366F1,#8B5CF6)",border:"none",borderRadius:8,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:18 }}
+                  title="Scan Barcode"
+                >
+                  📷
+                </button>
+              </div>
+              {f.barcode && (
+                <div style={{ fontSize:10,color:"#34D399",marginTop:3,fontFamily:"monospace" }}>
+                  ✓ {f.barcode}
+                </div>
+              )}
+            </div>
             <label style={{ fontSize:10,color:"#475569" }}>TANGGAL EXP *
               <input type="date" value={f.expDate} onChange={e=>set("expDate",e.target.value)} style={{ display:"block",width:"100%",marginTop:4,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,padding:"9px 10px",color:"#E2E8F0",fontSize:12,colorScheme:"dark" }}/>
             </label>
