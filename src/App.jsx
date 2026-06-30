@@ -55,7 +55,23 @@ function enrich(item) {
 
 // ─── Storage ────────────────────────────────────────────────────────────────
 const SK = "expt_v8";
-const load    = () => { try { return JSON.parse(localStorage.getItem(SK)||"[]"); } catch { return []; } };
+const OLD_KEYS = ["expt_v7","expt_v6","expt_v5","expt_v4"];
+const load = () => {
+  try {
+    const cur = localStorage.getItem(SK);
+    if (cur) return JSON.parse(cur);
+    // Migrasi otomatis dari key versi lama jika ada
+    for (const k of OLD_KEYS) {
+      const old = localStorage.getItem(k);
+      if (old) {
+        const parsed = JSON.parse(old);
+        localStorage.setItem(SK, old); // simpan ke key baru
+        return parsed;
+      }
+    }
+    return [];
+  } catch { return []; }
+};
 const persist = d  => { try { localStorage.setItem(SK, JSON.stringify(d)); } catch {} };
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
