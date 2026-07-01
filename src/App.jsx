@@ -48,8 +48,10 @@ function enrich(item) {
   else if (days <= 7)                  phase = "pull";
   else if (item.markedDown && qty===0) phase = "sold_out";
   else if (item.markedDown)            phase = "done_md";
+  // Barang bisa retur TIDAK masuk antrian markdown — langsung "return" saat periode MD
+  else if (md.pct > 0 && effRetur)     phase = "return";
   else if (md.pct > 0)                 phase = "pending_md";
-  return { ...item, days, md, urg, phase, qty, orig, effRetur,
+  return { ...item, days, md, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0,
     disc: orig>0 ? orig*(1-md.pct/100) : 0 };
 }
 
@@ -565,9 +567,16 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onEdit, onDel }) {
             </button>
           )}
           {item.phase==="return" && (
-            <button onClick={()=>onRet(item.id)} style={{ width:"100%", background:"transparent", border:`1px solid ${C.purpleBorder}`, color:C.purple, padding:"10px", borderRadius:11, fontSize:12.5, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-              {Ic.ret} Proses retur ke supplier
-            </button>
+            <>
+              {item.skipMd && (
+                <div style={{ background:C.purpleDim, border:`1px solid ${C.purpleBorder}`, borderRadius:10, padding:"8px 11px", fontSize:11.5, color:C.purple, fontWeight:600, textAlign:"center" }}>
+                  🔄 Barang ini bisa diretur — tidak perlu dimarkdown
+                </div>
+              )}
+              <button onClick={()=>onRet(item.id)} style={{ width:"100%", background:"transparent", border:`1px solid ${C.purpleBorder}`, color:C.purple, padding:"10px", borderRadius:11, fontSize:12.5, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                {Ic.ret} Proses retur ke supplier
+              </button>
+            </>
           )}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7 }}>
             <button onClick={()=>onEdit(item)} style={{ background:"transparent", border:`1px solid ${C.line}`, color:C.sub, padding:"9px", borderRadius:10, fontSize:12, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
@@ -1001,6 +1010,7 @@ export default function App() {
     pull:items.filter(i=>i.phase==="pull").length,
     return:items.filter(i=>i.phase==="return").length,
     expired:items.filter(i=>i.phase==="expired").length,
+    skip_md:items.filter(i=>i.skipMd).length, // retur items in markdown period
   }),[items]);
 
   const activeGLabel = filterG ? (filterS ? `${filterG} · ${filterS}` : `Gondola ${filterG}`) : null;
