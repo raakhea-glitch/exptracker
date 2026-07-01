@@ -769,11 +769,8 @@ function LaporanView({ items }) {
 ` +
       gondolaBreakdown.map(g=>
         `${g.g.label}: ${g.ditarik} ditarik, ${g.diretur} diretur`
-      ).join("
-") +
-      `
-
-_Dibuat dari ExpTracker_`;
+      ).join("\n") +
+      "\n\n_Dibuat dari ExpTracker_";
 
     if (navigator.share) {
       navigator.share({ title:"Laporan ExpTracker", text });
