@@ -43,15 +43,26 @@ function enrich(item) {
   const qty  = parseInt(item.qty) || 0;
   const orig = parseFloat(item.price) || 0;
   const effRetur = md.noRetur ? false : item.canReturn;
+
+  // Auto-upgrade: kalau tier diskon naik dari saat terakhir diceklis → reset markedDown
+  const needsUpgrade = item.markedDown && md.pct > 0
+    && item.lastMdPct != null && md.pct > item.lastMdPct;
+
+  // Auto MD tier: selalu gunakan tier terkini berdasarkan sisa hari
+  const autoMd = md;
+
   let phase = "normal";
-  if (days < 0)                        phase = effRetur ? "return" : "expired";
-  else if (days <= 7)                  phase = "pull";
-  else if (item.markedDown && qty===0) phase = "sold_out";
-  else if (item.markedDown)            phase = "done_md";
-  // Barang bisa retur TIDAK masuk antrian markdown — langsung "return" saat periode MD
-  else if (md.pct > 0 && effRetur)     phase = "return";
-  else if (md.pct > 0)                 phase = "pending_md";
-  return { ...item, days, md, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0,
+  if (days < 0)                                  phase = effRetur ? "return" : "expired";
+  else if (days <= 7)                            phase = "pull";     // H-7 → siap tarik apapun statusnya
+  else if (item.markedDown && qty===0 && !needsUpgrade) phase = "sold_out";
+  else if (item.markedDown && !needsUpgrade)     phase = "done_md";
+  // Barang bisa retur TIDAK masuk antrian markdown — langsung "return"
+  else if (md.pct > 0 && effRetur)               phase = "return";
+  else if (md.pct > 0)                           phase = "pending_md";
+  // Auto-upgrade: kalau sudah diceklis MD tapi sisa hari turun ke tier lebih tinggi
+  const autoMd = item.markedDown ? getMd(days, item.isImport) : md;
+
+  return { ...item, days, md:autoMd, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0, needsUpgrade,
     disc: orig>0 ? orig*(1-md.pct/100) : 0 };
 }
 
@@ -547,13 +558,27 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onEdit, onDel }) {
       {open && (
         <div style={{ padding:"13px 14px", borderTop:`1px solid ${C.line}`, background:C.bgSoft, display:"flex", flexDirection:"column", gap:8 }}>
           {item.phase==="pending_md" && (
-            <button onClick={()=>onMd(item.id)} style={{ width:"100%", background:C.accent, border:"none", color:"#08090D", padding:"11px", borderRadius:11, fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:7, cursor:"pointer" }}>
-              {Ic.check} Tandai sudah dimarkdown
+            <button onClick={()=>onMd(item.id, item.md.pct)} style={{ width:"100%", background:C.accent, border:"none", color:"#08090D", padding:"11px", borderRadius:11, fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:7, cursor:"pointer" }}>
+              {Ic.check} Tandai sudah dimarkdown -{item.md.pct}%
             </button>
           )}
           {item.phase==="done_md" && (
             <button onClick={()=>onMd(item.id)} style={{ width:"100%", background:"transparent", border:`1px solid ${C.greenBorder}`, color:C.green, padding:"10px", borderRadius:11, fontSize:12.5, fontWeight:600, cursor:"pointer" }}>
               Batalkan markdown
+            </button>
+          )}
+          {item.needsUpgrade && (
+            <div style={{ background:C.amberDim, border:`1px solid ${C.amberBorder}`, borderRadius:10, padding:"9px 12px", display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:16 }}>⬆️</span>
+              <div>
+                <div style={{ fontSize:12, fontWeight:700, color:C.amber }}>Diskon naik ke {item.md.pct}%!</div>
+                <div style={{ fontSize:11, color:C.sub, marginTop:2 }}>Perlu update harga di rak — ceklis ulang setelah update</div>
+              </div>
+            </div>
+          )}
+          {item.needsUpgrade && (
+            <button onClick={()=>onMd(item.id, item.md.pct)} style={{ width:"100%", background:C.amber, border:"none", color:"#08090D", padding:"10px", borderRadius:11, fontSize:12.5, fontWeight:700, cursor:"pointer" }}>
+              ✅ Sudah update harga ke -{item.md.pct}%
             </button>
           )}
           {item.phase==="sold_out" && (
@@ -562,7 +587,7 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onEdit, onDel }) {
             </div>
           )}
           {item.phase==="pull" && (
-            <button onClick={()=>onPull(item.id)} style={{ width:"100%", background:C.rose, border:"none", color:"#08090D", padding:"11px", borderRadius:11, fontSize:13, fontWeight:700, cursor:"pointer" }}>
+            <button onClick={()=>onPull(item.id, item.name)} style={{ width:"100%", background:C.rose, border:"none", color:"#08090D", padding:"11px", borderRadius:11, fontSize:13, fontWeight:700, cursor:"pointer" }}>
               Tandai sudah ditarik dari rak
             </button>
           )}
@@ -573,7 +598,7 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onEdit, onDel }) {
                   🔄 Barang ini bisa diretur — tidak perlu dimarkdown
                 </div>
               )}
-              <button onClick={()=>onRet(item.id)} style={{ width:"100%", background:"transparent", border:`1px solid ${C.purpleBorder}`, color:C.purple, padding:"10px", borderRadius:11, fontSize:12.5, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+              <button onClick={()=>onRet(item.id, item.name)} style={{ width:"100%", background:"transparent", border:`1px solid ${C.purpleBorder}`, color:C.purple, padding:"10px", borderRadius:11, fontSize:12.5, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                 {Ic.ret} Proses retur ke supplier
               </button>
             </>
@@ -976,10 +1001,26 @@ export default function App() {
     close();
   };
 
-  const onMd  = id  => { setRaw(p=>p.map(i=>i.id===id?{...i,markedDown:!i.markedDown}:i)); t_("Status markdown diperbarui"); };
+  const onMd  = (id, pct) => {
+    setRaw(p=>p.map(i=>{
+      if (i.id!==id) return i;
+      const next = !i.markedDown;
+      return { ...i, markedDown:next, lastMdPct: next ? (pct||0) : null };
+    }));
+    t_("Status markdown diperbarui");
+  };
   const onQty = (id,v)=>{ setRaw(p=>p.map(i=>i.id===id?{...i,qty:v}:i)); };
-  const onPull= id  => { setRaw(p=>p.map(i=>i.id===id?{...i,pulled:true,pulledAt:new Date().toISOString()}:i)); t_("Ditandai sudah ditarik"); };
-  const onRet = id  => { setRaw(p=>p.map(i=>i.id===id?{...i,returned:true,returnedAt:new Date().toISOString()}:i)); t_("Ditandai sudah diretur"); };
+  const onPull= (id, name) => {
+    if (!confirm(`Tarik "${name}" dari rak?\n\nBarang akan dipindah ke riwayat dan tidak muncul di board lagi.`)) return;
+    setRaw(p=>p.map(i=>i.id===id?{...i,pulled:true,pulledAt:new Date().toISOString()}:i));
+    t_("Ditandai sudah ditarik");
+  };
+  const onRet = (id, name) => {
+    const alasan = prompt(`Alasan retur "${name}":\n(opsional, tekan OK untuk skip)`);
+    if (alasan === null) return; // cancel
+    setRaw(p=>p.map(i=>i.id===id?{...i,returned:true,returnedAt:new Date().toISOString(),returNote:alasan||""}:i));
+    t_("Ditandai sudah diretur");
+  };
   const onDel = id  => { if(!confirm("Hapus barang ini?"))return; setRaw(p=>p.filter(i=>i.id!==id)); t_("Barang dihapus"); };
 
   const cardProps = { onMd, onQty, onPull, onRet, onEdit:openEdit, onDel };
@@ -993,6 +1034,8 @@ export default function App() {
     if (filterG!==null) arr=arr.filter(i=>i.gondola===filterG);
     if (filterS!==null) arr=arr.filter(i=>i.section===filterS);
     if (phaseF!=="all")  arr=arr.filter(i=>i.phase===phaseF);
+    // Auto arsip: expired lebih dari 7 hari yang lalu tidak tampil di board (kecuali tab arsip)
+    if (tab!=="arsip") arr=arr.filter(i=>!(i.days < -7));
     if (tab==="today")   arr=arr.filter(i=>i.urg.level>=1);
     return [...arr].sort((a,b)=>{
       if (sortBy==="urgency") return b.urg.level-a.urg.level||a.days-b.days;
