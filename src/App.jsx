@@ -584,10 +584,19 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onEdit, onDel }) {
 }
 
 // ─── Form Modal ────────────────────────────────────────────────────────────────
-function FormModal({ initial, onSave, onClose }) {
+function FormModal({ initial, onSave, onClose, allItems=[] }) {
   const [f, setF] = useState(initial);
   const [showScanner, setShowScanner] = useState(false);
-  const set = (k,v) => setF(p=>({...p,[k]:v}));
+  const [forceAdd,   setForceAdd]   = useState(false);
+  const set = (k,v) => {
+    setF(p=>({...p,[k]:v}));
+    if (k==="barcode") setForceAdd(false); // reset saat barcode berubah
+  };
+
+  // Cek duplikat barcode
+  const dupItem = f.barcode.trim().length > 0 && !forceAdd
+    ? allItems.find(i => i.barcode === f.barcode.trim() && i.id !== (initial.id||null))
+    : null;
   const days   = f.expDate ? getDays(f.expDate) : null;
   const mdPrev = days!==null ? getMd(days, f.isImport) : null;
 
@@ -633,6 +642,32 @@ function FormModal({ initial, onSave, onClose }) {
                   </button>
                 </div>
               </div>
+
+              {/* Duplicate barcode warning */}
+              {dupItem && (
+                <div style={{ gridColumn:"1/-1", background:C.amberDim, border:`1px solid ${C.amberBorder}`, borderRadius:11, padding:"11px 13px" }}>
+                  <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+                    <div style={{ fontSize:18, flexShrink:0 }}>⚠️</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:700, fontSize:12.5, color:C.amber, marginBottom:4 }}>
+                        Barcode ini sudah ada di sistem!
+                      </div>
+                      <div style={{ fontSize:12, color:C.text, fontWeight:600, marginBottom:2 }}>{dupItem.name}</div>
+                      <div style={{ fontSize:11, color:C.sub, marginBottom:8 }}>
+                        Exp: {dupItem.expDate && new Date(dupItem.expDate).toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"})}
+                        {dupItem.gondola ? ` · ${dupItem.section||dupItem.gondola}` : ""}
+                        {" · "}{getDays(dupItem.expDate) >= 0 ? `Sisa ${getDays(dupItem.expDate)} hari` : "Sudah expired"}
+                      </div>
+                      <div style={{ display:"flex", gap:7 }}>
+                        <button onClick={()=>setForceAdd(true)} style={{ flex:1, background:"transparent", border:`1px solid ${C.amberBorder}`, color:C.amber, padding:"7px", borderRadius:8, fontSize:11.5, fontWeight:700, cursor:"pointer" }}>
+                          Tetap Tambah (Beda Batch)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <div style={{ fontSize:10.5,color:C.sub,marginBottom:5,fontWeight:600 }}>Tanggal exp</div>
                 <input type="date" value={f.expDate} onChange={e=>set("expDate",e.target.value)} style={{ width:"100%",background:C.bg,border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 11px",color:C.text,fontSize:12.5,colorScheme:"dark" }}/>
@@ -677,7 +712,7 @@ function FormModal({ initial, onSave, onClose }) {
           </div>
 
           <div style={{ display:"grid",gridTemplateColumns:"1fr auto",gap:8,marginTop:6 }}>
-            <button onClick={submit} style={{ background:C.accent,border:"none",color:"#08090D",padding:13,borderRadius:12,fontWeight:700,fontSize:14,cursor:"pointer" }}>
+            <button onClick={submit} disabled={!!dupItem} style={{ background:dupItem?C.slateDim:C.accent,border:"none",color:dupItem?"#475569":"#08090D",padding:13,borderRadius:12,fontWeight:700,fontSize:14,cursor:dupItem?"not-allowed":"pointer",opacity:dupItem?.6:1 }}>
               {f.id?"Simpan perubahan":"Tambah barang"}
             </button>
             <button onClick={onClose} style={{ background:"transparent",border:`1px solid ${C.line}`,color:C.sub,padding:"13px 18px",borderRadius:12,fontSize:13,cursor:"pointer" }}>
@@ -988,7 +1023,7 @@ export default function App() {
         </div>
       )}
 
-      {formData && <FormModal initial={formData} onSave={saveItem} onClose={close}/>}
+      {formData && <FormModal initial={formData} onSave={saveItem} onClose={close} allItems={raw}/>}
 
       {/* ── Header ── */}
       <div style={{ background:"rgba(8,11,18,.92)",backdropFilter:"blur(16px)",borderBottom:`1px solid ${C.line}`,padding:"14px 16px",position:"sticky",top:0,zIndex:100 }}>
