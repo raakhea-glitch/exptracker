@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 
 // ─── Gondola config ────────────────────────────────────────────────────────
 const GONDOLAS = {
@@ -690,6 +690,221 @@ function FormModal({ initial, onSave, onClose }) {
   );
 }
 
+
+// ─── Laporan View ─────────────────────────────────────────────────────────────
+function LaporanView({ items }) {
+  const [bulan, setBulan] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
+
+  const fmtBulan = b => new Date(b+"-01").toLocaleDateString("id-ID",{month:"long",year:"numeric"});
+  const fmtTgl   = s => s ? new Date(s).toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"}) : "-";
+  const fmtRp2   = n => "Rp "+Number(n).toLocaleString("id-ID");
+
+  // Semua bulan yang ada data
+  const allMonths = [...new Set(items.flatMap(i => {
+    const ms = [];
+    if (i.pulledAt)   ms.push(i.pulledAt.slice(0,7));
+    if (i.returnedAt) ms.push(i.returnedAt.slice(0,7));
+    if (i.addedAt)    ms.push(i.addedAt.slice(0,7));
+    return ms;
+  }))].sort().reverse();
+
+  if (!allMonths.length) allMonths.push(bulan);
+
+  // Filter item berdasarkan bulan dipilih
+  const inMonth = (dateStr) => dateStr && dateStr.slice(0,7) === bulan;
+
+  const pulled   = items.filter(i => inMonth(i.pulledAt));
+  const returned = items.filter(i => inMonth(i.returnedAt));
+  const expired  = items.filter(i => {
+    const d = getDays(i.expDate);
+    return d < 0 && inMonth(i.addedAt);
+  });
+
+  // Nilai total diretur (diselamatkan)
+  const nilaiRetur = returned.reduce((s,i) => s+(parseFloat(i.price)||0)*(parseInt(i.qty)||1), 0);
+  // Nilai total ditarik (loss)
+  const nilaiTarik = pulled.filter(i=>!i.canReturn).reduce((s,i) => s+(parseFloat(i.price)||0)*(parseInt(i.qty)||1), 0);
+
+  // Per gondola breakdown
+  const gondolaBreakdown = Object.entries(GONDOLAS).map(([k,g]) => ({
+    k, g,
+    ditarik:   pulled.filter(i=>i.gondola===k).length,
+    diretur:   returned.filter(i=>i.gondola===k).length,
+    tanpaLokasi: pulled.filter(i=>!i.gondola).length,
+  }));
+
+  // Chart data — tarik vs retur per minggu dalam bulan
+  const getWeek = dateStr => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    return Math.ceil(d.getDate() / 7);
+  };
+  const weekData = [1,2,3,4,5].map(w => ({
+    w,
+    label: `Minggu ${w}`,
+    tarik:  pulled.filter(i=>getWeek(i.pulledAt)===w).length,
+    retur:  returned.filter(i=>getWeek(i.returnedAt)===w).length,
+  })).filter(w => w.tarik > 0 || w.retur > 0);
+
+  const maxBar = Math.max(...weekData.map(w=>Math.max(w.tarik,w.retur)), 1);
+
+  // Share laporan sebagai teks
+  const shareReport = () => {
+    const text = `📊 *LAPORAN EKSPIRASI — ${fmtBulan(bulan)}*
+
+` +
+      `🚨 Ditarik dari rak : ${pulled.length} item
+` +
+      `🔄 Diretur supplier : ${returned.length} item
+` +
+      `💀 Expired          : ${expired.length} item
+` +
+      `💰 Nilai diretur    : ${fmtRp2(nilaiRetur)}
+
+` +
+      `*Per Gondola:*
+` +
+      gondolaBreakdown.map(g=>
+        `${g.g.label}: ${g.ditarik} ditarik, ${g.diretur} diretur`
+      ).join("
+") +
+      `
+
+_Dibuat dari ExpTracker_`;
+
+    if (navigator.share) {
+      navigator.share({ title:"Laporan ExpTracker", text });
+    } else {
+      navigator.clipboard?.writeText(text);
+      alert("Laporan disalin ke clipboard!");
+    }
+  };
+
+  return (
+    <div>
+      {/* Pilih bulan */}
+      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
+        <div style={{ fontWeight:700,fontSize:15,color:C.text }}>Laporan Bulanan</div>
+        <select value={bulan} onChange={e=>setBulan(e.target.value)} style={{ background:C.card,border:`1px solid ${C.line}`,borderRadius:9,padding:"7px 11px",color:C.text,fontSize:12,cursor:"pointer" }}>
+          {allMonths.map(m=>(
+            <option key={m} value={m}>{fmtBulan(m)}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:12 }}>
+        {[
+          { l:"Ditarik dari rak", v:pulled.length,   ic:"🚨", c:C.rose,   sub:"item" },
+          { l:"Diretur supplier", v:returned.length, ic:"🔄", c:C.purple, sub:"item" },
+          { l:"Expired",          v:expired.length,  ic:"💀", c:C.slate,  sub:"item" },
+          { l:"Nilai diretur",    v:fmtRp2(nilaiRetur), ic:"💰", c:C.green, sub:"diselamatkan" },
+        ].map(s=>(
+          <div key={s.l} style={{ background:C.card,border:`1px solid ${C.line}`,borderRadius:14,padding:"13px 14px" }}>
+            <div style={{ fontSize:20,marginBottom:6 }}>{s.ic}</div>
+            <div style={{ fontSize:18,fontWeight:800,color:s.c,lineHeight:1,fontVariantNumeric:"tabular-nums" }}>{s.v}</div>
+            <div style={{ fontSize:10,color:C.faint,marginTop:3 }}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabel per Gondola */}
+      <div style={{ background:C.card,border:`1px solid ${C.line}`,borderRadius:14,padding:"14px",marginBottom:12 }}>
+        <div style={{ fontWeight:700,fontSize:12.5,color:C.sub,marginBottom:12 }}>Breakdown per Gondola</div>
+        <div style={{ display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr",gap:"8px 12px",alignItems:"center" }}>
+          <div style={{ fontSize:10,color:C.faint }}>Gondola</div>
+          <div style={{ fontSize:10,color:C.faint,textAlign:"center" }}>Ditarik</div>
+          <div style={{ fontSize:10,color:C.faint,textAlign:"center" }}>Diretur</div>
+          <div style={{ fontSize:10,color:C.faint,textAlign:"center" }}>Total</div>
+          {Object.entries(GONDOLAS).map(([k,g])=>{
+            const dit = pulled.filter(i=>i.gondola===k).length;
+            const dir = returned.filter(i=>i.gondola===k).length;
+            return (
+              <React.Fragment key={k}>
+                <div style={{ fontWeight:700,fontSize:13,color:g.color }}>{g.label}</div>
+                <div style={{ textAlign:"center",fontWeight:700,fontSize:14,color:dit>0?C.rose:C.faint }}>{dit}</div>
+                <div style={{ textAlign:"center",fontWeight:700,fontSize:14,color:dir>0?C.purple:C.faint }}>{dir}</div>
+                <div style={{ textAlign:"center",fontWeight:700,fontSize:14,color:C.text }}>{dit+dir}</div>
+              </React.Fragment>
+            );
+          })}
+          <div style={{ fontSize:11,color:C.faint,gridColumn:"1/-1",borderTop:`1px solid ${C.line}`,paddingTop:8,marginTop:4 }}>
+            {pulled.filter(i=>!i.gondola).length > 0 && `*${pulled.filter(i=>!i.gondola).length} item tanpa lokasi gondola`}
+          </div>
+        </div>
+      </div>
+
+      {/* Bar Chart minggu */}
+      {weekData.length > 0 && (
+        <div style={{ background:C.card,border:`1px solid ${C.line}`,borderRadius:14,padding:"14px",marginBottom:12 }}>
+          <div style={{ fontWeight:700,fontSize:12.5,color:C.sub,marginBottom:14 }}>Aktivitas per Minggu</div>
+          <div style={{ display:"flex",alignItems:"flex-end",gap:10,height:120,paddingBottom:4 }}>
+            {weekData.map(w=>(
+              <div key={w.w} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,height:"100%",justifyContent:"flex-end" }}>
+                <div style={{ width:"100%",display:"flex",gap:2,alignItems:"flex-end",height:100,justifyContent:"center" }}>
+                  {/* Bar tarik */}
+                  <div style={{ flex:1,background:C.rose,borderRadius:"4px 4px 0 0",height:`${(w.tarik/maxBar)*100}%`,minHeight:w.tarik>0?4:0,transition:"height .4s" }}/>
+                  {/* Bar retur */}
+                  <div style={{ flex:1,background:C.purple,borderRadius:"4px 4px 0 0",height:`${(w.retur/maxBar)*100}%`,minHeight:w.retur>0?4:0,transition:"height .4s" }}/>
+                </div>
+                <div style={{ fontSize:10,color:C.faint }}>{w.label.replace("Minggu ","Mg ")}</div>
+                <div style={{ fontSize:9,color:C.faint }}>{w.tarik>0?`${w.tarik}↑`:""}{w.retur>0?` ${w.retur}↩`:""}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display:"flex",gap:14,marginTop:8,justifyContent:"center" }}>
+            <div style={{ display:"flex",alignItems:"center",gap:5 }}>
+              <div style={{ width:10,height:10,borderRadius:3,background:C.rose }}/>
+              <span style={{ fontSize:11,color:C.faint }}>Ditarik</span>
+            </div>
+            <div style={{ display:"flex",alignItems:"center",gap:5 }}>
+              <div style={{ width:10,height:10,borderRadius:3,background:C.purple }}/>
+              <span style={{ fontSize:11,color:C.faint }}>Diretur</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Riwayat list */}
+      <div style={{ background:C.card,border:`1px solid ${C.line}`,borderRadius:14,padding:"14px",marginBottom:12 }}>
+        <div style={{ fontWeight:700,fontSize:12.5,color:C.sub,marginBottom:12 }}>Riwayat Tindakan</div>
+        {[...pulled.map(i=>({...i,_aksi:"tarik",_tgl:i.pulledAt})),
+          ...returned.map(i=>({...i,_aksi:"retur",_tgl:i.returnedAt}))
+        ].sort((a,b)=>new Date(b._tgl)-new Date(a._tgl)).length === 0 ? (
+          <div style={{ textAlign:"center",padding:"20px 0",color:C.faint,fontSize:12.5 }}>
+            Belum ada riwayat di bulan {fmtBulan(bulan)}
+          </div>
+        ) : (
+          [...pulled.map(i=>({...i,_aksi:"tarik",_tgl:i.pulledAt})),
+           ...returned.map(i=>({...i,_aksi:"retur",_tgl:i.returnedAt}))
+          ].sort((a,b)=>new Date(b._tgl)-new Date(a._tgl)).map((item,idx)=>(
+            <div key={idx} style={{ display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${C.line}` }}>
+              <div style={{ width:32,height:32,borderRadius:16,background:item._aksi==="tarik"?C.roseDim:C.purpleDim,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:14 }}>
+                {item._aksi==="tarik"?"🚨":"🔄"}
+              </div>
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ fontWeight:600,fontSize:13,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{item.name}</div>
+                <div style={{ fontSize:10.5,color:C.faint,marginTop:1 }}>
+                  {item._aksi==="tarik"?"Ditarik dari rak":"Diretur ke supplier"} · {fmtTgl(item._tgl)}
+                </div>
+              </div>
+              {item.gondola && <LocBadge gondola={item.gondola} section={item.section}/>}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Share button */}
+      <button onClick={shareReport} style={{ width:"100%",background:C.accent,border:"none",color:"#08090D",padding:"13px",borderRadius:12,fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16 }}>
+        📤 Bagikan Laporan
+      </button>
+    </div>
+  );
+}
+
 // ─── ROOT ────────────────────────────────────────────────────────────────────
 const BLANK = { barcode:"",name:"",expDate:"",canReturn:true,isImport:false,price:"",qty:"1",gondola:null,section:null };
 
@@ -722,8 +937,8 @@ export default function App() {
 
   const onMd  = id  => { setRaw(p=>p.map(i=>i.id===id?{...i,markedDown:!i.markedDown}:i)); t_("Status markdown diperbarui"); };
   const onQty = (id,v)=>{ setRaw(p=>p.map(i=>i.id===id?{...i,qty:v}:i)); };
-  const onPull= id  => { setRaw(p=>p.map(i=>i.id===id?{...i,pulled:true}:i)); t_("Ditandai sudah ditarik"); };
-  const onRet = id  => { setRaw(p=>p.map(i=>i.id===id?{...i,returned:true}:i)); t_("Ditandai sudah diretur"); };
+  const onPull= id  => { setRaw(p=>p.map(i=>i.id===id?{...i,pulled:true,pulledAt:new Date().toISOString()}:i)); t_("Ditandai sudah ditarik"); };
+  const onRet = id  => { setRaw(p=>p.map(i=>i.id===id?{...i,returned:true,returnedAt:new Date().toISOString()}:i)); t_("Ditandai sudah diretur"); };
   const onDel = id  => { if(!confirm("Hapus barang ini?"))return; setRaw(p=>p.filter(i=>i.id!==id)); t_("Barang dihapus"); };
 
   const cardProps = { onMd, onQty, onPull, onRet, onEdit:openEdit, onDel };
@@ -793,7 +1008,7 @@ export default function App() {
           </button>
         </div>
         <div style={{ display:"flex",gap:3,background:C.cardHi,borderRadius:11,padding:3 }}>
-          {[{k:"today",l:"Hari ini"},{k:"gondola",l:"Gondola"},{k:"all",l:"Semua"},{k:"analytics",l:"Analitik"}].map(t=>(
+          {[{k:"today",l:"Hari ini"},{k:"gondola",l:"Gondola"},{k:"all",l:"Semua"},{k:"laporan",l:"Laporan"}].map(t=>(
             <button key={t.k} onClick={()=>{ setTab(t.k); if(t.k!=="all"){ setFilterG(null); setFilterS(null); } }} style={{ flex:1,background:tab===t.k?C.accent:"transparent",border:"none",color:tab===t.k?"#08090D":C.sub,padding:"7px 0",borderRadius:8,fontSize:12,fontWeight:700 }}>{t.l}</button>
           ))}
         </div>
@@ -802,7 +1017,7 @@ export default function App() {
       <div style={{ padding:"14px 14px 0" }}>
 
         {tab==="gondola" && <GondolaMapView items={items} onFilter={handleGondolaFilter}/>}
-        {tab==="analytics" && <Analytics items={items}/>}
+        {tab==="laporan" && <LaporanView items={raw}/>}
 
         {(tab==="today"||tab==="all") && (
           <>
