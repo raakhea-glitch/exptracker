@@ -37,29 +37,25 @@ function getUrgency(days) {
   return                { level:0, tag:"Aman",     color:"#34D399" };
 }
 function enrich(item) {
-  const days = getDays(item.expDate);
-  const md   = getMd(days, item.isImport);
-  const urg  = getUrgency(days);
-  const qty  = parseInt(item.qty) || 0;
-  const orig = parseFloat(item.price) || 0;
+  const days     = getDays(item.expDate);
+  const md       = getMd(days, item.isImport);
+  const urg      = getUrgency(days);
+  const qty      = parseInt(item.qty) || 0;
+  const orig     = parseFloat(item.price) || 0;
   const effRetur = md.noRetur ? false : item.canReturn;
 
-  // Auto-upgrade: kalau tier diskon naik dari saat terakhir diceklis → reset markedDown
-  const needsUpgrade = item.markedDown && md.pct > 0
-    && item.lastMdPct != null && md.pct > item.lastMdPct;
-
-  // Auto MD tier: selalu gunakan tier terkini berdasarkan sisa hari
-  const autoMd = md;
+  // Auto-upgrade: tier naik dari saat diceklis → perlu update harga lagi
+  const needsUpgrade = !!(item.markedDown && md.pct > 0
+    && item.lastMdPct != null && md.pct > item.lastMdPct);
 
   let phase = "normal";
-  if (days < 0)                                  phase = effRetur ? "return" : "expired";
-  else if (days <= 7)                            phase = "pull";     // H-7 → siap tarik apapun statusnya
+  if (days < 0)                                       phase = effRetur ? "return" : "expired";
+  else if (days <= 7)                                 phase = "pull";
   else if (item.markedDown && qty===0 && !needsUpgrade) phase = "sold_out";
-  else if (item.markedDown && !needsUpgrade)     phase = "done_md";
-  // Barang bisa retur TIDAK masuk antrian markdown — langsung "return"
-  else if (md.pct > 0 && effRetur)               phase = "return";
-  else if (md.pct > 0)                           phase = "pending_md";
-  return { ...item, days, md:autoMd, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0, needsUpgrade,
+  else if (item.markedDown && !needsUpgrade)          phase = "done_md";
+  else if (md.pct > 0 && effRetur)                    phase = "return";
+  else if (md.pct > 0)                                phase = "pending_md";
+  return { ...item, days, md, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0, needsUpgrade,
     disc: orig>0 ? orig*(1-md.pct/100) : 0 };
 }
 
@@ -1114,11 +1110,98 @@ function CatatanView({ items }) {
   );
 }
 
+
+// ─── Splash Screen ────────────────────────────────────────────────────────────
+function SplashScreen({ onDone }) {
+  const [phase, setPhase] = useState(0);
+  // phase 0: icon muncul, phase 1: text muncul, phase 2: fade out
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase(1), 400);
+    const t2 = setTimeout(() => setPhase(2), 1600);
+    const t3 = setTimeout(() => onDone(), 2200);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:9999,
+      background:"#080B12",
+      display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", gap:20,
+      opacity: phase === 2 ? 0 : 1,
+      transition: phase === 2 ? "opacity .55s ease" : "none",
+    }}>
+      {/* Animated ring + icon */}
+      <div style={{ position:"relative", width:96, height:96 }}>
+        {/* Outer spinning ring */}
+        <svg width="96" height="96" style={{ position:"absolute", inset:0, animation:"spin 1.8s linear infinite" }}>
+          <circle cx="48" cy="48" r="42" fill="none"
+            stroke="rgba(129,140,248,.15)" strokeWidth="3"/>
+          <circle cx="48" cy="48" r="42" fill="none"
+            stroke="#818CF8" strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray="60 204"
+          />
+        </svg>
+        {/* Inner icon box */}
+        <div style={{
+          position:"absolute", inset:12,
+          background:"linear-gradient(135deg,rgba(129,140,248,.2),rgba(192,132,252,.15))",
+          border:"1px solid rgba(129,140,248,.35)",
+          borderRadius:20,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          transform: phase >= 0 ? "scale(1)" : "scale(0.5)",
+          transition: "transform .4s cubic-bezier(.34,1.56,.64,1)",
+        }}>
+          <span style={{ fontSize:34 }}>📦</span>
+        </div>
+      </div>
+
+      {/* App name */}
+      <div style={{
+        textAlign:"center",
+        opacity: phase >= 1 ? 1 : 0,
+        transform: phase >= 1 ? "translateY(0)" : "translateY(12px)",
+        transition: "opacity .4s ease, transform .4s ease",
+      }}>
+        <div style={{ fontSize:24, fontWeight:800, color:"#E7EAF0", letterSpacing:"-.5px" }}>
+          ExpTracker
+        </div>
+        <div style={{ fontSize:12, color:"#4A536A", marginTop:4, letterSpacing:".5px" }}>
+          MONITORING KEDALUWARSA
+        </div>
+      </div>
+
+      {/* Loading dots */}
+      <div style={{
+        display:"flex", gap:6, marginTop:8,
+        opacity: phase >= 1 ? 1 : 0,
+        transition: "opacity .3s ease .2s",
+      }}>
+        {[0,1,2].map(i=>(
+          <div key={i} style={{
+            width:5, height:5, borderRadius:3,
+            background:"#818CF8",
+            animation:`dot .9s ease-in-out ${i*0.18}s infinite`,
+          }}/>
+        ))}
+      </div>
+
+      <style>{`
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes dot  { 0%,80%,100%{transform:scale(.5);opacity:.3} 40%{transform:scale(1);opacity:1} }
+      `}</style>
+    </div>
+  );
+}
+
 // ─── ROOT ────────────────────────────────────────────────────────────────────
 const BLANK = { barcode:"",name:"",expDate:"",canReturn:true,isImport:false,price:"",qty:"1",gondola:null,section:null };
 
 export default function App() {
-  const [raw,      setRaw]      = useState(load);
+  const [showSplash, setShowSplash] = useState(true);
+  const [raw,        setRaw]        = useState(load);
   const [formData, setFormData] = useState(null);
   const [search,   setSearch]   = useState("");
   const [tab,      setTab]      = useState("today");
@@ -1209,6 +1292,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight:"100vh",background:C.bg,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",color:C.text,paddingBottom:84 }}>
+      {showSplash && <SplashScreen onDone={()=>setShowSplash(false)}/>}
       <style>{`
         @keyframes fi{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
