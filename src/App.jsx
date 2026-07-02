@@ -971,6 +971,146 @@ function LaporanView({ items }) {
   );
 }
 
+
+// ─── Catatan View — list sederhana buat referensi form kertas ─────────────────
+function CatatanView({ items }) {
+  const [sortG,   setSortG]   = useState("all");   // filter gondola
+  const [sortCol, setSortCol] = useState("exp");   // sort kolom
+  const [phase,   setPhase]   = useState("all");   // filter status
+  const [search,  setSearch]  = useState("");
+
+  const fmtExp = d => new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit",year:"2-digit"});
+
+  // Filter & sort
+  const list = items
+    .filter(i => {
+      if (sortG !== "all" && i.gondola !== sortG) return false;
+      if (phase === "md"  && i.md.pct === 0) return false;
+      if (phase === "pull"&& i.phase !== "pull") return false;
+      if (phase === "retur"&& i.phase !== "return") return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return i.name.toLowerCase().includes(q) || i.barcode.includes(q);
+      }
+      return true;
+    })
+    .sort((a,b) => {
+      if (sortCol === "gondola") return (a.gondola||"Z").localeCompare(b.gondola||"Z") || (a.section||"").localeCompare(b.section||"");
+      if (sortCol === "exp")     return a.days - b.days;
+      if (sortCol === "name")    return a.name.localeCompare(b.name);
+      if (sortCol === "disc")    return b.md.pct - a.md.pct;
+      return 0;
+    });
+
+  // Status label singkat
+  const statusLabel = item => {
+    if (item.days < 0)            return { l:"EXP",   c:C.slate  };
+    if (item.phase==="pull")      return { l:"TARIK", c:C.rose   };
+    if (item.phase==="return")    return { l:"RETUR", c:C.purple };
+    if (item.phase==="done_md")   return { l:"MD✓",   c:C.green  };
+    if (item.phase==="sold_out")  return { l:"HABIS", c:C.orange };
+    if (item.md.pct > 0)         return { l:`-${item.md.pct}%`, c:item.md.pct===70?C.rose:item.md.pct===50?C.orange:C.amber };
+    return                               { l:"AMAN",  c:C.faint  };
+  };
+
+  return (
+    <div>
+      {/* Filter bar */}
+      <div style={{ display:"flex", gap:7, marginBottom:10, flexWrap:"wrap", alignItems:"center" }}>
+        {/* Gondola filter */}
+        <div style={{ display:"flex", gap:4 }}>
+          {["all","A","B","C","D"].map(g=>(
+            <button key={g} onClick={()=>setSortG(g)} style={{ background:sortG===g?C.accent:C.card, border:`1px solid ${sortG===g?C.accent:C.line}`, color:sortG===g?"#08090D":C.sub, padding:"5px 11px", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer" }}>
+              {g==="all"?"Semua":g}
+            </button>
+          ))}
+        </div>
+        {/* Phase filter */}
+        <select value={phase} onChange={e=>setPhase(e.target.value)} style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:8, padding:"5px 9px", color:C.sub, fontSize:12, cursor:"pointer" }}>
+          <option value="all">Semua status</option>
+          <option value="md">Ada diskon</option>
+          <option value="pull">Siap tarik</option>
+          <option value="retur">Retur</option>
+        </select>
+      </div>
+
+      {/* Search */}
+      <div style={{ position:"relative", marginBottom:10 }}>
+        <div style={{ position:"absolute", left:11, top:"50%", transform:"translateY(-50%)", color:C.faint, pointerEvents:"none" }}>{Ic.search}</div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari nama atau barcode..." style={{ width:"100%", background:C.card, border:`1px solid ${C.line}`, borderRadius:10, padding:"9px 12px 9px 34px", color:C.text, fontSize:13 }}/>
+      </div>
+
+      {/* Sort header — tap untuk sort */}
+      <div style={{ display:"grid", gridTemplateColumns:"32px 1fr 90px 56px 44px", gap:0, background:C.cardHi, borderRadius:"10px 10px 0 0", padding:"8px 10px", marginBottom:1 }}>
+        <div style={{ fontSize:10, color:C.faint, fontWeight:700 }}>NO</div>
+        <button onClick={()=>setSortCol("name")} style={{ background:"none", border:"none", color:sortCol==="name"?C.accent:C.faint, fontSize:10, fontWeight:700, textAlign:"left", cursor:"pointer", padding:0 }}>
+          NAMA {sortCol==="name"&&"↑"}
+        </button>
+        <button onClick={()=>setSortCol("exp")} style={{ background:"none", border:"none", color:sortCol==="exp"?C.accent:C.faint, fontSize:10, fontWeight:700, textAlign:"center", cursor:"pointer", padding:0 }}>
+          EXP {sortCol==="exp"&&"↑"}
+        </button>
+        <button onClick={()=>setSortCol("gondola")} style={{ background:"none", border:"none", color:sortCol==="gondola"?C.accent:C.faint, fontSize:10, fontWeight:700, textAlign:"center", cursor:"pointer", padding:0 }}>
+          LOK {sortCol==="gondola"&&"↑"}
+        </button>
+        <button onClick={()=>setSortCol("disc")} style={{ background:"none", border:"none", color:sortCol==="disc"?C.accent:C.faint, fontSize:10, fontWeight:700, textAlign:"center", cursor:"pointer", padding:0 }}>
+          STS {sortCol==="disc"&&"↑"}
+        </button>
+      </div>
+
+      {/* List */}
+      <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
+        {list.length === 0 ? (
+          <div style={{ textAlign:"center", padding:"32px 20px", color:C.faint, fontSize:13 }}>Tidak ada barang</div>
+        ) : list.map((item, idx) => {
+          const sl = statusLabel(item);
+          const isOdd = idx % 2 === 0;
+          return (
+            <div key={item.id} style={{ display:"grid", gridTemplateColumns:"32px 1fr 90px 56px 44px", gap:0, padding:"9px 10px", background:isOdd?"transparent":"rgba(255,255,255,.02)", borderBottom:idx<list.length-1?`1px solid ${C.line}`:"none", alignItems:"center" }}>
+              {/* No */}
+              <div style={{ fontSize:10.5, color:C.faint, fontVariantNumeric:"tabular-nums" }}>{idx+1}</div>
+
+              {/* Nama + barcode */}
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", lineHeight:1.3 }}>{item.name}</div>
+                <div style={{ fontSize:10, color:C.faint, fontFamily:"ui-monospace,monospace", marginTop:1 }}>{item.barcode}</div>
+              </div>
+
+              {/* Exp date + sisa hari */}
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:11.5, fontWeight:700, color:item.days<=7?C.rose:item.days<=30?C.orange:item.days<=90?C.amber:C.sub, fontVariantNumeric:"tabular-nums" }}>
+                  {fmtExp(item.expDate)}
+                </div>
+                <div style={{ fontSize:9.5, color:C.faint, marginTop:1 }}>
+                  {item.days<0?`${Math.abs(item.days)}h lalu`:item.days===0?"Hari ini":`${item.days}h`}
+                </div>
+              </div>
+
+              {/* Lokasi */}
+              <div style={{ textAlign:"center" }}>
+                {item.gondola ? (
+                  <span style={{ background:GONDOLAS[item.gondola].dim, color:GONDOLAS[item.gondola].color, borderRadius:6, padding:"2px 6px", fontSize:10.5, fontWeight:700 }}>
+                    {item.section||item.gondola}
+                  </span>
+                ) : <span style={{ color:C.faint, fontSize:10 }}>—</span>}
+              </div>
+
+              {/* Status */}
+              <div style={{ textAlign:"center" }}>
+                <span style={{ color:sl.c, fontSize:10.5, fontWeight:800 }}>{sl.l}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer count */}
+      <div style={{ textAlign:"center", marginTop:10, fontSize:11.5, color:C.faint }}>
+        {list.length} barang · {new Date().toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT ────────────────────────────────────────────────────────────────────
 const BLANK = { barcode:"",name:"",expDate:"",canReturn:true,isImport:false,price:"",qty:"1",gondola:null,section:null };
 
@@ -1093,7 +1233,7 @@ export default function App() {
           </button>
         </div>
         <div style={{ display:"flex",gap:3,background:C.cardHi,borderRadius:11,padding:3 }}>
-          {[{k:"today",l:"Hari ini"},{k:"gondola",l:"Gondola"},{k:"all",l:"Semua"},{k:"laporan",l:"Laporan"}].map(t=>(
+          {[{k:"today",l:"Hari ini"},{k:"gondola",l:"Gondola"},{k:"all",l:"Semua"},{k:"laporan",l:"Laporan"},{k:"catatan",l:"📋 Catat"}].map(t=>(
             <button key={t.k} onClick={()=>{ setTab(t.k); if(t.k!=="all"){ setFilterG(null); setFilterS(null); } }} style={{ flex:1,background:tab===t.k?C.accent:"transparent",border:"none",color:tab===t.k?"#08090D":C.sub,padding:"7px 0",borderRadius:8,fontSize:12,fontWeight:700 }}>{t.l}</button>
           ))}
         </div>
@@ -1102,6 +1242,7 @@ export default function App() {
       <div style={{ padding:"14px 14px 0" }}>
 
         {tab==="gondola" && <GondolaMapView items={items} onFilter={handleGondolaFilter}/>}
+        {tab==="catatan" && <CatatanView items={items}/>}
         {tab==="laporan" && <LaporanView items={raw}/>}
 
         {(tab==="today"||tab==="all") && (
