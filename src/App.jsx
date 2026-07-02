@@ -59,9 +59,6 @@ function enrich(item) {
   // Barang bisa retur TIDAK masuk antrian markdown — langsung "return"
   else if (md.pct > 0 && effRetur)               phase = "return";
   else if (md.pct > 0)                           phase = "pending_md";
-  // Auto-upgrade: kalau sudah diceklis MD tapi sisa hari turun ke tier lebih tinggi
-  const autoMd = item.markedDown ? getMd(days, item.isImport) : md;
-
   return { ...item, days, md:autoMd, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0, needsUpgrade,
     disc: orig>0 ? orig*(1-md.pct/100) : 0 };
 }
