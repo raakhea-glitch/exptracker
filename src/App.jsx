@@ -499,7 +499,7 @@ function Analytics({ items }) {
 }
 
 // ─── Action Card ───────────────────────────────────────────────────────────────
-function ActionCard({ item, onMd, onQty, onPull, onRet, onEdit, onDel }) {
+function ActionCard({ item, onMd, onQty, onPull, onRet, onBatalRetur, onEdit, onDel }) {
   const [open, setOpen] = useState(false);
   const mdc = item.md.tier ? MDC[item.md.tier] : null;
   const urg = item.urg;
@@ -758,7 +758,7 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
 
 
 // ─── Laporan View ─────────────────────────────────────────────────────────────
-function LaporanView({ items }) {
+function LaporanView({ items, onBatalRetur }) {
   const [bulan, setBulan] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
@@ -944,7 +944,7 @@ function LaporanView({ items }) {
           [...pulled.map(i=>({...i,_aksi:"tarik",_tgl:i.pulledAt})),
            ...returned.map(i=>({...i,_aksi:"retur",_tgl:i.returnedAt}))
           ].sort((a,b)=>new Date(b._tgl)-new Date(a._tgl)).map((item,idx)=>(
-            <div key={idx} style={{ display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${C.line}` }}>
+            <div key={idx} style={{ display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:idx<([...pulled.map(i=>({...i,_aksi:"tarik",_tgl:i.pulledAt})),...returned.map(i=>({...i,_aksi:"retur",_tgl:i.returnedAt}))].length-1)?`1px solid ${C.line}`:"none" }}>
               <div style={{ width:32,height:32,borderRadius:16,background:item._aksi==="tarik"?C.roseDim:C.purpleDim,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:14 }}>
                 {item._aksi==="tarik"?"🚨":"🔄"}
               </div>
@@ -952,9 +952,15 @@ function LaporanView({ items }) {
                 <div style={{ fontWeight:600,fontSize:13,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{item.name}</div>
                 <div style={{ fontSize:10.5,color:C.faint,marginTop:1 }}>
                   {item._aksi==="tarik"?"Ditarik dari rak":"Diretur ke supplier"} · {fmtTgl(item._tgl)}
+                  {item.returNote && <span style={{ color:C.sub }}> · {item.returNote}</span>}
                 </div>
               </div>
               {item.gondola && <LocBadge gondola={item.gondola} section={item.section}/>}
+              {item._aksi==="retur" && onBatalRetur && (
+                <button onClick={()=>onBatalRetur(item.id)} style={{ background:"transparent",border:`1px solid ${C.line}`,color:C.faint,padding:"4px 9px",borderRadius:7,fontSize:10.5,fontWeight:600,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap" }}>
+                  ↩ Batal
+                </button>
+              )}
             </div>
           ))
         )}
@@ -1154,13 +1160,19 @@ export default function App() {
   };
   const onRet = (id, name) => {
     const alasan = prompt(`Alasan retur "${name}":\n(opsional, tekan OK untuk skip)`);
-    if (alasan === null) return; // cancel
+    if (alasan === null) return; // cancel/batal
     setRaw(p=>p.map(i=>i.id===id?{...i,returned:true,returnedAt:new Date().toISOString(),returNote:alasan||""}:i));
     t_("Ditandai sudah diretur");
   };
+
+  const onBatalRetur = id => {
+    if (!confirm("Batalkan retur barang ini?")) return;
+    setRaw(p=>p.map(i=>i.id===id?{...i,returned:false,returnedAt:null,returNote:""}:i));
+    t_("Retur dibatalkan");
+  };
   const onDel = id  => { if(!confirm("Hapus barang ini?"))return; setRaw(p=>p.filter(i=>i.id!==id)); t_("Barang dihapus"); };
 
-  const cardProps = { onMd, onQty, onPull, onRet, onEdit:openEdit, onDel };
+  const cardProps = { onMd, onQty, onPull, onRet, onBatalRetur, onEdit:openEdit, onDel };
   const handleGondolaFilter = (g, s) => { setFilterG(g); setFilterS(s); setTab("all"); };
 
   const visible = useMemo(()=>{
@@ -1240,7 +1252,7 @@ export default function App() {
 
         {tab==="gondola" && <GondolaMapView items={items} onFilter={handleGondolaFilter}/>}
         {tab==="catatan" && <CatatanView items={items}/>}
-        {tab==="laporan" && <LaporanView items={raw}/>}
+        {tab==="laporan" && <LaporanView items={raw} onBatalRetur={onBatalRetur}/>}
 
         {(tab==="today"||tab==="all") && (
           <>
