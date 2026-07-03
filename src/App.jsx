@@ -396,6 +396,119 @@ function GondolaMapView({ items, onFilter }) {
   );
 }
 
+
+// ─── Quick Widget — ringkasan di atas tab "Hari Ini" ──────────────────────────
+function QuickWidget({ items }) {
+  const now = new Date().toLocaleDateString("id-ID",{weekday:"short",day:"numeric",month:"short"});
+
+  // Statistik kritis
+  const kritis   = items.filter(i=>i.urg.level>=3 && i.days>=0);
+  const mdReady  = items.filter(i=>i.phase==="pending_md");
+  const pullReady= items.filter(i=>i.phase==="pull");
+  const retReady = items.filter(i=>i.phase==="return" && i.days>=0);
+
+  // Gondola paling urgent
+  const gondolaScore = Object.keys(GONDOLAS).map(k=>({
+    k,
+    g: GONDOLAS[k],
+    score: items.filter(i=>i.gondola===k&&i.urg.level>=2).length,
+    pull:  items.filter(i=>i.gondola===k&&i.phase==="pull").length,
+    md:    items.filter(i=>i.gondola===k&&i.phase==="pending_md").length,
+  })).filter(g=>g.score>0).sort((a,b)=>b.score-a.score);
+
+  const allSafe = kritis.length===0 && mdReady.length===0;
+
+  return (
+    <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:18, overflow:"hidden", marginBottom:14, boxShadow:`0 4px 24px rgba(0,0,0,.12)` }}>
+      {/* Top bar — tanggal + status */}
+      <div style={{ padding:"13px 15px 10px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div>
+          <div style={{ fontSize:11, color:C.faint, fontWeight:600, letterSpacing:".3px" }}>{now.toUpperCase()}</div>
+          <div style={{ fontSize:16, fontWeight:800, color:C.text, marginTop:2 }}>
+            {allSafe ? "Semua gondola aman ✅" : "Perlu tindakan hari ini"}
+          </div>
+        </div>
+        {!allSafe && (
+          <div style={{ textAlign:"center", background:C.roseDim, border:`1px solid ${C.roseBorder}`, borderRadius:12, padding:"6px 12px" }}>
+            <div style={{ fontSize:22, fontWeight:900, color:C.rose, lineHeight:1, fontVariantNumeric:"tabular-nums" }}>
+              {kritis.length + mdReady.length}
+            </div>
+            <div style={{ fontSize:9, color:C.rose, fontWeight:600, marginTop:2 }}>BUTUH AKSI</div>
+          </div>
+        )}
+      </div>
+
+      {/* Stats row */}
+      {!allSafe && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1, background:C.line, margin:"0 0 0 0" }}>
+          {[
+            { l:"Kritis",  v:kritis.length,    c:C.rose,   bg:C.roseDim   },
+            { l:"Tarik",   v:pullReady.length, c:C.orange, bg:C.orangeDim },
+            { l:"Markdown",v:mdReady.length,   c:C.amber,  bg:C.amberDim  },
+            { l:"Retur",   v:retReady.length,  c:C.purple, bg:C.purpleDim },
+          ].map(s=>(
+            <div key={s.l} style={{ background:C.card, padding:"10px 8px", textAlign:"center" }}>
+              <div style={{ fontSize:20, fontWeight:900, color:s.v>0?s.c:C.faint, fontVariantNumeric:"tabular-nums" }}>{s.v}</div>
+              <div style={{ fontSize:9.5, color:s.v>0?s.c:C.faint, fontWeight:600, marginTop:2 }}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Gondola urgency bar */}
+      {gondolaScore.length > 0 && (
+        <div style={{ padding:"10px 15px 13px" }}>
+          <div style={{ fontSize:10, color:C.faint, fontWeight:600, marginBottom:8, letterSpacing:".2px" }}>GONDOLA BUTUH PERHATIAN</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {gondolaScore.map(({k,g,score,pull,md})=>{
+              const maxScore = gondolaScore[0].score;
+              return (
+                <div key={k} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  {/* Label */}
+                  <div style={{ width:24, height:24, borderRadius:7, background:g.dim, border:`1px solid ${g.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <span style={{ fontSize:11, fontWeight:800, color:g.color }}>{k}</span>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{ flex:1, height:6, background:C.cardHi, borderRadius:3, overflow:"hidden" }}>
+                    <div style={{ height:"100%", width:`${(score/maxScore)*100}%`, background:g.color, borderRadius:3, transition:"width .4s" }}/>
+                  </div>
+                  {/* Detail chips */}
+                  <div style={{ display:"flex", gap:5, flexShrink:0 }}>
+                    {pull>0 && (
+                      <span style={{ background:C.roseDim, color:C.rose, borderRadius:6, padding:"2px 7px", fontSize:10, fontWeight:700 }}>
+                        🚨{pull}
+                      </span>
+                    )}
+                    {md>0 && (
+                      <span style={{ background:C.amberDim, color:C.amber, borderRadius:6, padding:"2px 7px", fontSize:10, fontWeight:700 }}>
+                        🏷️{md}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Safe state illustration */}
+      {allSafe && (
+        <div style={{ padding:"6px 15px 16px", display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ display:"flex", gap:6 }}>
+            {Object.entries(GONDOLAS).map(([k,g])=>(
+              <div key={k} style={{ width:32, height:32, borderRadius:9, background:g.dim, border:`1px solid ${g.border}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <span style={{ fontSize:12, fontWeight:800, color:g.color }}>{k}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize:11.5, color:C.faint }}>Semua gondola tidak ada yang kritis</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Daily Hero ──────────────────────────────────────────────────────────────
 function DailyHero({ items }) {
   const actions = [
@@ -524,6 +637,25 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onBatalRetur, onEdit, on
             {item.gondola && <LocBadge gondola={item.gondola} section={item.section}/>}
             {mdc && <Pill ch={<>{Ic.tag}−{item.md.pct}%</>} color={mdc.t} dim={mdc.d} bdr={mdc.b}/>}
           </div>
+          {/* Action hint — selalu tampil, langsung tau harus ngapain */}
+          {(()=>{
+            const hints = {
+              pending_md: { txt:"👉 Update harga di rak sekarang",   col:C.amber  },
+              done_md:    { txt:"⏳ Menunggu H-7 untuk ditarik",      col:C.green  },
+              sold_out:   { txt:"🎉 Stok markdown sudah habis",       col:C.orange },
+              pull:       { txt:"🚨 Tarik dari rak hari ini!",        col:C.rose   },
+              return:     { txt:"🔄 Kembalikan ke supplier",          col:C.purple },
+              expired:    { txt:"💀 Sudah expired — segera proses",   col:C.slate  },
+              normal:     null,
+            };
+            const h = hints[item.phase];
+            if (!h) return null;
+            return (
+              <div style={{ fontSize:11.5, color:h.col, fontWeight:600, marginBottom:6, display:"flex", alignItems:"center", gap:5 }}>
+                {h.txt}
+              </div>
+            );
+          })()}
           <div style={{ fontWeight:700, fontSize:14.5, color:C.text, lineHeight:1.3, marginBottom:3 }}>{item.name}</div>
           <div style={{ fontSize:10.5, color:C.faint, fontFamily:"ui-monospace,monospace" }}>{item.barcode}</div>
         </div>
@@ -737,7 +869,17 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
               </span>
             </div>
 
-            {mdPrev?.pct>0 && days!==null && (
+            {/* Warning tanggal backdate / expired */}
+            {days !== null && days < 0 && (
+              <div style={{ background:C.roseDim,border:`1px solid ${C.roseBorder}`,borderRadius:11,padding:"10px 13px",display:"flex",alignItems:"center",gap:8 }}>
+                <span style={{ fontSize:16 }}>⚠️</span>
+                <div>
+                  <div style={{ fontSize:12.5,color:C.rose,fontWeight:700 }}>Tanggal sudah lewat!</div>
+                  <div style={{ fontSize:11,color:C.sub,marginTop:2 }}>Barang sudah expired {Math.abs(days)} hari lalu. Pastikan tanggal benar.</div>
+                </div>
+              </div>
+            )}
+            {mdPrev?.pct>0 && days!==null && days>=0 && (
               <div style={{ background:getMDC()[mdPrev.tier].d,border:`1px solid ${getMDC()[mdPrev.tier].b}`,borderRadius:11,padding:"10px 13px",display:"flex",alignItems:"center",gap:8 }}>
                 <span style={{ color:getMDC()[mdPrev.tier].t }}>{Ic.tag}</span>
                 <span style={{ fontSize:12.5,color:getMDC()[mdPrev.tier].t,fontWeight:700 }}>
@@ -981,7 +1123,7 @@ function LaporanView({ items, onBatalRetur }) {
 
 
 // ─── Catatan View — list sederhana buat referensi form kertas ─────────────────
-function CatatanView({ items }) {
+function CatatanView({ items, onEdit }) {
   const [sortG,   setSortG]   = useState("all");   // filter gondola
   const [sortCol, setSortCol] = useState("exp");   // sort kolom
   const [phase,   setPhase]   = useState("all");   // filter status
@@ -1102,9 +1244,10 @@ function CatatanView({ items }) {
                 ) : <span style={{ color:C.faint, fontSize:10 }}>—</span>}
               </div>
 
-              {/* Status */}
-              <div style={{ textAlign:"center" }}>
+              {/* Status + edit */}
+              <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
                 <span style={{ color:sl.c, fontSize:10.5, fontWeight:800 }}>{sl.l}</span>
+                <button onClick={()=>onEdit(item)} style={{ background:"transparent",border:`1px solid ${C.line}`,color:C.faint,borderRadius:5,padding:"2px 7px",fontSize:9.5,cursor:"pointer" }}>edit</button>
               </div>
             </div>
           );
@@ -1210,6 +1353,7 @@ const BLANK = { barcode:"",name:"",expDate:"",canReturn:true,isImport:false,pric
 
 export default function App() {
   const [isDark,     setIsDark]     = useState(()=>{ try{return localStorage.getItem("exptheme")!=="light"}catch{return true} });
+  const [showMore,   setShowMore]   = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [raw,        setRaw]        = useState(load);
   const [formData, setFormData] = useState(null);
@@ -1309,7 +1453,7 @@ export default function App() {
   const activeGLabel = filterG ? (filterS ? `${filterG} · ${filterS}` : `Gondola ${filterG}`) : null;
 
   return (
-    <div style={{ minHeight:"100vh",background:C.bg,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",color:C.text,paddingBottom:84,transition:"background .3s,color .3s" }}>
+    <div onClick={()=>setShowMore(false)} style={{ minHeight:"100vh",background:C.bg,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",color:C.text,paddingBottom:84,transition:"background .3s,color .3s" }}>
       {showSplash && <SplashScreen onDone={()=>setShowSplash(false)}/>}
       <style>{`
         @keyframes fi{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
@@ -1358,12 +1502,12 @@ export default function App() {
       <div style={{ padding:"14px 14px 0" }}>
 
         {tab==="gondola" && <GondolaMapView items={items} onFilter={handleGondolaFilter}/>}
-        {tab==="catatan" && <CatatanView items={items}/>}
+        {tab==="catatan" && <CatatanView items={raw.map(enrich)} onEdit={openEdit}/>}
         {tab==="laporan" && <LaporanView items={raw} onBatalRetur={onBatalRetur}/>}
 
         {(tab==="today"||tab==="all") && (
           <>
-            {tab==="today" && <DailyHero items={items}/>}
+            {tab==="today" && <><QuickWidget items={items}/><DailyHero items={items}/></> }
 
             {activeGLabel && (
               <div style={{ display:"flex",alignItems:"center",gap:8,background:C.accentDim,border:`1px solid ${C.accentBorder}`,borderRadius:11,padding:"8px 12px",marginBottom:11 }}>
