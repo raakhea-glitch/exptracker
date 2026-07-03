@@ -86,32 +86,41 @@ const fmtD  = d => new Date(d).toLocaleDateString("id-ID",{day:"numeric",month:"
 const todayStr = () => new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long"});
 
 // ─── Design tokens ───────────────────────────────────────────────────────────
-const C = {
-  bg:     "#080B12",
-  bgSoft: "#0B0F18",
-  card:   "#11161F",
-  cardHi: "#141A25",
-  line:   "rgba(255,255,255,.06)",
-  lineHi: "rgba(255,255,255,.1)",
-  text:   "#E7EAF0",
-  sub:    "#8993A8",
-  faint:  "#4A536A",
-  accent: "#818CF8",
-  accentDim: "rgba(129,140,248,.14)",
-  accentBorder: "rgba(129,140,248,.32)",
-  purple: "#C084FC", purpleDim:"rgba(192,132,252,.14)", purpleBorder:"rgba(192,132,252,.32)",
-  green:  "#34D399", greenDim: "rgba(52,211,153,.14)",  greenBorder: "rgba(52,211,153,.32)",
-  amber:  "#FBBF24", amberDim: "rgba(251,191,36,.14)",  amberBorder: "rgba(251,191,36,.32)",
-  orange: "#FB923C", orangeDim:"rgba(251,146,60,.14)",  orangeBorder:"rgba(251,146,60,.32)",
-  rose:   "#FB7185", roseDim:  "rgba(251,113,133,.14)", roseBorder:  "rgba(251,113,133,.32)",
-  blue:   "#60A5FA", blueDim:  "rgba(96,165,250,.14)",  blueBorder:  "rgba(96,165,250,.32)",
-  slate:  "#64748B", slateDim: "rgba(100,116,139,.12)", slateBorder: "rgba(100,116,139,.25)",
+const DARK = {
+  bg:"#080B12", bgSoft:"#0B0F18", card:"#11161F", cardHi:"#141A25",
+  line:"rgba(255,255,255,.06)", lineHi:"rgba(255,255,255,.1)",
+  text:"#E7EAF0", sub:"#8993A8", faint:"#4A536A",
+  accent:"#818CF8", accentDim:"rgba(129,140,248,.14)", accentBorder:"rgba(129,140,248,.32)",
+  purple:"#C084FC", purpleDim:"rgba(192,132,252,.14)", purpleBorder:"rgba(192,132,252,.32)",
+  green:"#34D399",  greenDim:"rgba(52,211,153,.14)",   greenBorder:"rgba(52,211,153,.32)",
+  amber:"#FBBF24",  amberDim:"rgba(251,191,36,.14)",   amberBorder:"rgba(251,191,36,.32)",
+  orange:"#FB923C", orangeDim:"rgba(251,146,60,.14)",  orangeBorder:"rgba(251,146,60,.32)",
+  rose:"#FB7185",   roseDim:"rgba(251,113,133,.14)",   roseBorder:"rgba(251,113,133,.32)",
+  blue:"#60A5FA",   blueDim:"rgba(96,165,250,.14)",    blueBorder:"rgba(96,165,250,.32)",
+  slate:"#64748B",  slateDim:"rgba(100,116,139,.12)",  slateBorder:"rgba(100,116,139,.25)",
 };
-const MDC = {
+const LIGHT = {
+  bg:"#F1F5F9", bgSoft:"#E8EDF4", card:"#FFFFFF", cardHi:"#F8FAFC",
+  line:"rgba(0,0,0,.08)", lineHi:"rgba(0,0,0,.14)",
+  text:"#0F172A", sub:"#475569", faint:"#94A3B8",
+  accent:"#4F46E5", accentDim:"rgba(79,70,229,.1)", accentBorder:"rgba(79,70,229,.3)",
+  purple:"#7C3AED", purpleDim:"rgba(124,58,237,.1)", purpleBorder:"rgba(124,58,237,.3)",
+  green:"#059669",  greenDim:"rgba(5,150,105,.1)",   greenBorder:"rgba(5,150,105,.3)",
+  amber:"#D97706",  amberDim:"rgba(217,119,6,.1)",   amberBorder:"rgba(217,119,6,.3)",
+  orange:"#EA580C", orangeDim:"rgba(234,88,12,.1)",  orangeBorder:"rgba(234,88,12,.3)",
+  rose:"#E11D48",   roseDim:"rgba(225,29,72,.1)",    roseBorder:"rgba(225,29,72,.3)",
+  blue:"#2563EB",   blueDim:"rgba(37,99,235,.1)",    blueBorder:"rgba(37,99,235,.3)",
+  slate:"#64748B",  slateDim:"rgba(100,116,139,.1)", slateBorder:"rgba(100,116,139,.25)",
+};
+
+// C is set at runtime based on theme (default dark)
+let C = DARK;
+const setTheme = (isDark) => { C = isDark ? DARK : LIGHT; };
+const getMDC = () => ({
   md30:{ t:C.amber,  d:C.amberDim,  b:C.amberBorder },
   md50:{ t:C.orange, d:C.orangeDim, b:C.orangeBorder },
   md70:{ t:C.rose,   d:C.roseDim,   b:C.roseBorder },
-};
+});
 
 // ─── Icons (thin, consistent stroke) ─────────────────────────────────────────
 const Ic = {
@@ -497,7 +506,7 @@ function Analytics({ items }) {
 // ─── Action Card ───────────────────────────────────────────────────────────────
 function ActionCard({ item, onMd, onQty, onPull, onRet, onBatalRetur, onEdit, onDel }) {
   const [open, setOpen] = useState(false);
-  const mdc = item.md.tier ? MDC[item.md.tier] : null;
+  const mdc = item.md.tier ? getMDC()[item.md.tier] : null;
   const urg = item.urg;
   const g   = item.gondola ? GONDOLAS[item.gondola] : null;
   const hasDisc = item.md.pct > 0 && item.days >= 0;
@@ -729,9 +738,9 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
             </div>
 
             {mdPrev?.pct>0 && days!==null && (
-              <div style={{ background:MDC[mdPrev.tier].d,border:`1px solid ${MDC[mdPrev.tier].b}`,borderRadius:11,padding:"10px 13px",display:"flex",alignItems:"center",gap:8 }}>
-                <span style={{ color:MDC[mdPrev.tier].t }}>{Ic.tag}</span>
-                <span style={{ fontSize:12.5,color:MDC[mdPrev.tier].t,fontWeight:700 }}>
+              <div style={{ background:getMDC()[mdPrev.tier].d,border:`1px solid ${getMDC()[mdPrev.tier].b}`,borderRadius:11,padding:"10px 13px",display:"flex",alignItems:"center",gap:8 }}>
+                <span style={{ color:getMDC()[mdPrev.tier].t }}>{Ic.tag}</span>
+                <span style={{ fontSize:12.5,color:getMDC()[mdPrev.tier].t,fontWeight:700 }}>
                   Otomatis diskon {mdPrev.pct}%{f.price>0&&` — ${fmtRp(f.price*(1-mdPrev.pct/100))}`}
                 </span>
               </div>
@@ -1200,6 +1209,7 @@ function SplashScreen({ onDone }) {
 const BLANK = { barcode:"",name:"",expDate:"",canReturn:true,isImport:false,price:"",qty:"1",gondola:null,section:null };
 
 export default function App() {
+  const [isDark,     setIsDark]     = useState(()=>{ try{return localStorage.getItem("exptheme")!=="light"}catch{return true} });
   const [showSplash, setShowSplash] = useState(true);
   const [raw,        setRaw]        = useState(load);
   const [formData, setFormData] = useState(null);
@@ -1213,6 +1223,14 @@ export default function App() {
   const [toast,    setToast]    = useState(null);
 
   useEffect(()=>persist(raw),[raw]);
+
+  // Apply theme
+  setTheme(isDark);
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    try { localStorage.setItem("exptheme", next?"dark":"light"); } catch{}
+  };
   const t_ = (m,type="ok") => { setToast({m,type}); setTimeout(()=>setToast(null),2400); };
 
   const items = useMemo(()=>raw.map(enrich),[raw]);
@@ -1291,7 +1309,7 @@ export default function App() {
   const activeGLabel = filterG ? (filterS ? `${filterG} · ${filterS}` : `Gondola ${filterG}`) : null;
 
   return (
-    <div style={{ minHeight:"100vh",background:C.bg,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",color:C.text,paddingBottom:84 }}>
+    <div style={{ minHeight:"100vh",background:C.bg,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",color:C.text,paddingBottom:84,transition:"background .3s,color .3s" }}>
       {showSplash && <SplashScreen onDone={()=>setShowSplash(false)}/>}
       <style>{`
         @keyframes fi{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
@@ -1299,7 +1317,7 @@ export default function App() {
         *{box-sizing:border-box} input,button,select{outline:none;font-family:inherit}
         ::-webkit-scrollbar{width:3px;height:3px} ::-webkit-scrollbar-thumb{background:${C.line};border-radius:2px}
         button{-webkit-tap-highlight-color:transparent}
-        input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.6)}
+        input[type=date]::-webkit-calendar-picker-indicator{filter:${isDark?"invert(.6)":"invert(0)"}}
         ::placeholder{color:${C.faint}}
       `}</style>
 
@@ -1312,7 +1330,7 @@ export default function App() {
       {formData && <FormModal initial={formData} onSave={saveItem} onClose={close} allItems={raw}/>}
 
       {/* ── Header ── */}
-      <div style={{ background:"rgba(8,11,18,.92)",backdropFilter:"blur(16px)",borderBottom:`1px solid ${C.line}`,padding:"14px 16px",position:"sticky",top:0,zIndex:100 }}>
+      <div style={{ background:isDark?"rgba(8,11,18,.95)":"rgba(248,250,252,.95)",backdropFilter:"blur(16px)",borderBottom:`1px solid ${C.line}`,padding:"14px 16px",position:"sticky",top:0,zIndex:100 }}>
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12 }}>
           <div style={{ display:"flex",alignItems:"center",gap:10 }}>
             <div style={{ width:36,height:36,background:C.accentDim,border:`1px solid ${C.accentBorder}`,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",color:C.accent,flexShrink:0 }}>{Ic.bag}</div>
@@ -1321,9 +1339,14 @@ export default function App() {
               <div style={{ fontSize:10,color:C.faint }}>Gondola A · B · C · D</div>
             </div>
           </div>
-          <button onClick={openAdd} style={{ background:C.accent,border:"none",color:"#08090D",padding:"9px 15px",borderRadius:11,fontWeight:700,fontSize:13,display:"flex",alignItems:"center",gap:5,cursor:"pointer" }}>
-            {Ic.plus} Tambah
-          </button>
+          <div style={{ display:"flex", gap:7 }}>
+            <button onClick={toggleTheme} style={{ background:C.cardHi,border:`1px solid ${C.line}`,color:C.sub,width:38,height:38,borderRadius:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0 }}>
+              {isDark?"☀️":"🌙"}
+            </button>
+            <button onClick={openAdd} style={{ background:C.accent,border:"none",color:isDark?"#08090D":"#fff",padding:"9px 15px",borderRadius:11,fontWeight:700,fontSize:13,display:"flex",alignItems:"center",gap:5,cursor:"pointer" }}>
+              {Ic.plus} Tambah
+            </button>
+          </div>
         </div>
         <div style={{ display:"flex",gap:3,background:C.cardHi,borderRadius:11,padding:3 }}>
           {[{k:"today",l:"Hari ini"},{k:"gondola",l:"Gondola"},{k:"all",l:"Semua"},{k:"laporan",l:"Laporan"},{k:"catatan",l:"📋 Catat"}].map(t=>(
