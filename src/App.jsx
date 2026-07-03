@@ -760,7 +760,33 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onBatalRetur, onEdit, on
 // ─── Form Modal ────────────────────────────────────────────────────────────────
 function FormModal({ initial, onSave, onClose, allItems=[] }) {
   const [f, setF] = useState(initial);
-  const [showScanner, setShowScanner] = useState(false);
+  const [showScanner,  setShowScanner]  = useState(false);
+  const [isListening,  setIsListening]  = useState(false);
+  const recognRef = useRef(null);
+
+  const startVoice = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("Browser tidak support input suara. Coba Chrome di Android."); return; }
+    const r = new SR();
+    r.lang = "id-ID";
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+    r.onstart  = () => setIsListening(true);
+    r.onend    = () => setIsListening(false);
+    r.onerror  = () => setIsListening(false);
+    r.onresult = (e) => {
+      const txt = e.results[0][0].transcript;
+      set("name", txt);
+      setIsListening(false);
+    };
+    recognRef.current = r;
+    r.start();
+  };
+
+  const stopVoice = () => {
+    recognRef.current?.stop();
+    setIsListening(false);
+  };
   const [forceAdd,   setForceAdd]   = useState(false);
   const set = (k,v) => {
     setF(p=>({...p,[k]:v}));
@@ -850,7 +876,32 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
 
             <div>
               <div style={{ fontSize:10.5,color:C.sub,marginBottom:5,fontWeight:600 }}>Nama barang</div>
-              <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Nama produk" style={{ width:"100%",background:C.bg,border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 11px",color:C.text,fontSize:14 }}/>
+              <div style={{ display:"flex", gap:7 }}>
+                <input
+                  value={f.name}
+                  onChange={e=>set("name",e.target.value)}
+                  placeholder={isListening?"🎤 Mendengarkan...":"Nama produk"}
+                  style={{ flex:1, background:isListening?`${C.rose}18`:C.bg, border:`1px solid ${isListening?C.rose:C.line}`, borderRadius:10, padding:"10px 11px", color:C.text, fontSize:14, transition:"all .2s" }}
+                />
+                <button
+                  type="button"
+                  onClick={isListening ? stopVoice : startVoice}
+                  style={{ width:44, height:44, borderRadius:10, border:`1px solid ${isListening?C.rose:C.line}`, background:isListening?C.roseDim:C.cardHi, color:isListening?C.rose:C.sub, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:20, transition:"all .2s", animation:isListening?"micPulse 1s ease-in-out infinite":"none" }}
+                  title={isListening?"Tap untuk stop":"Tap untuk input suara"}
+                >
+                  🎤
+                </button>
+              </div>
+              {isListening && (
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:5 }}>
+                  <div style={{ display:"flex", gap:2 }}>
+                    {[0,1,2,3].map(i=>(
+                      <div key={i} style={{ width:3, background:C.rose, borderRadius:2, animation:`voiceBar .6s ease-in-out ${i*0.12}s infinite alternate`, minHeight:3 }}/>
+                    ))}
+                  </div>
+                  <span style={{ fontSize:11, color:C.rose, fontWeight:600 }}>Sedang mendengarkan — ucapkan nama barang</span>
+                </div>
+              )}
             </div>
 
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8 }}>
@@ -1348,7 +1399,9 @@ function SplashScreen({ onDone }) {
 
       <style>{`
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-        @keyframes dot  { 0%,80%,100%{transform:scale(.5);opacity:.3} 40%{transform:scale(1);opacity:1} }
+        @keyframes dot      { 0%,80%,100%{transform:scale(.5);opacity:.3} 40%{transform:scale(1);opacity:1} }
+        @keyframes micPulse  { 0%{box-shadow:0 0 0 0 ${C.rose}50} 100%{box-shadow:0 0 0 8px ${C.rose}00} }
+        @keyframes voiceBar  { from{height:3px} to{height:18px} }
       `}</style>
     </div>
   );
