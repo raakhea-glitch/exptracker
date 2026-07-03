@@ -398,7 +398,7 @@ function GondolaMapView({ items, onFilter }) {
 
 
 // ─── Quick Widget — ringkasan di atas tab "Hari Ini" ──────────────────────────
-function QuickWidget({ items }) {
+function QuickWidget({ items, onNavigate }) {
   const now = new Date().toLocaleDateString("id-ID",{weekday:"short",day:"numeric",month:"short"});
 
   // Statistik kritis
@@ -442,14 +442,17 @@ function QuickWidget({ items }) {
       {!allSafe && (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1, background:C.line, margin:"0 0 0 0" }}>
           {[
-            { l:"Kritis",  v:kritis.length,    c:C.rose,   bg:C.roseDim   },
-            { l:"Tarik",   v:pullReady.length, c:C.orange, bg:C.orangeDim },
-            { l:"Markdown",v:mdReady.length,   c:C.amber,  bg:C.amberDim  },
-            { l:"Retur",   v:retReady.length,  c:C.purple, bg:C.purpleDim },
+            { l:"Kritis",  v:kritis.length,    c:C.rose,   bg:C.roseDim,   phase:"all",        urg:4 },
+            { l:"Tarik",   v:pullReady.length, c:C.orange, bg:C.orangeDim, phase:"pull",       urg:null },
+            { l:"Markdown",v:mdReady.length,   c:C.amber,  bg:C.amberDim,  phase:"pending_md", urg:null },
+            { l:"Retur",   v:retReady.length,  c:C.purple, bg:C.purpleDim, phase:"return",     urg:null },
           ].map(s=>(
-            <div key={s.l} style={{ background:C.card, padding:"10px 8px", textAlign:"center" }}>
+            <div key={s.l}
+              onClick={()=>s.v>0 && onNavigate(s.phase, s.urg)}
+              style={{ background:C.card, padding:"10px 8px", textAlign:"center", cursor:s.v>0?"pointer":"default", transition:"opacity .15s", position:"relative" }}>
               <div style={{ fontSize:20, fontWeight:900, color:s.v>0?s.c:C.faint, fontVariantNumeric:"tabular-nums" }}>{s.v}</div>
               <div style={{ fontSize:9.5, color:s.v>0?s.c:C.faint, fontWeight:600, marginTop:2 }}>{s.l}</div>
+              {s.v>0 && <div style={{ fontSize:8, color:s.c, opacity:.6, marginTop:1 }}>tap →</div>}
             </div>
           ))}
         </div>
@@ -463,7 +466,9 @@ function QuickWidget({ items }) {
             {gondolaScore.map(({k,g,score,pull,md})=>{
               const maxScore = gondolaScore[0].score;
               return (
-                <div key={k} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <div key={k}
+                  onClick={()=>onNavigate("gondola_"+k)}
+                  style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer", padding:"3px 0" }}>
                   {/* Label */}
                   <div style={{ width:24, height:24, borderRadius:7, background:g.dim, border:`1px solid ${g.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                     <span style={{ fontSize:11, fontWeight:800, color:g.color }}>{k}</span>
@@ -473,7 +478,7 @@ function QuickWidget({ items }) {
                     <div style={{ height:"100%", width:`${(score/maxScore)*100}%`, background:g.color, borderRadius:3, transition:"width .4s" }}/>
                   </div>
                   {/* Detail chips */}
-                  <div style={{ display:"flex", gap:5, flexShrink:0 }}>
+                  <div style={{ display:"flex", gap:5, flexShrink:0, alignItems:"center" }}>
                     {pull>0 && (
                       <span style={{ background:C.roseDim, color:C.rose, borderRadius:6, padding:"2px 7px", fontSize:10, fontWeight:700 }}>
                         🚨{pull}
@@ -484,6 +489,7 @@ function QuickWidget({ items }) {
                         🏷️{md}
                       </span>
                     )}
+                    <span style={{ fontSize:9, color:C.faint, opacity:.6 }}>→</span>
                   </div>
                 </div>
               );
@@ -1418,6 +1424,26 @@ export default function App() {
   const onDel = id  => { if(!confirm("Hapus barang ini?"))return; setRaw(p=>p.filter(i=>i.id!==id)); t_("Barang dihapus"); };
 
   const cardProps = { onMd, onQty, onPull, onRet, onBatalRetur, onEdit:openEdit, onDel };
+
+  // Handle widget tap → switch to "all" tab with correct filter
+  const handleWidgetNav = (type, urgLevel) => {
+    setTab("all");
+    setFilterG(null); setFilterS(null);
+    setFilterType("all");
+    if (type.startsWith("gondola_")) {
+      // Filter by gondola
+      const g = type.replace("gondola_", "");
+      setFilterG(g); setFilterS(null);
+      setPhaseF("all");
+    } else if (type === "all" && urgLevel) {
+      // Kritis — filter urgency level >= 3
+      setPhaseF("all");
+      setSortBy("urgency");
+    } else {
+      setPhaseF(type);
+      setSortBy("urgency");
+    }
+  };
   const handleGondolaFilter = (g, s) => { setFilterG(g); setFilterS(s); setTab("all"); };
 
   const visible = useMemo(()=>{
@@ -1507,7 +1533,7 @@ export default function App() {
 
         {(tab==="today"||tab==="all") && (
           <>
-            {tab==="today" && <><QuickWidget items={items}/><DailyHero items={items}/></> }
+            {tab==="today" && <><QuickWidget items={items} onNavigate={handleWidgetNav}/><DailyHero items={items}/></> }
 
             {activeGLabel && (
               <div style={{ display:"flex",alignItems:"center",gap:8,background:C.accentDim,border:`1px solid ${C.accentBorder}`,borderRadius:11,padding:"8px 12px",marginBottom:11 }}>
