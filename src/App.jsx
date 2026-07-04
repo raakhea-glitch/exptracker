@@ -256,7 +256,7 @@ function BarcodeScanner({ onResult, onClose }) {
         if (!videoRef.current || videoRef.current.readyState !== 4) { requestAnimationFrame(detect); return; }
         try {
           const codes = await detector.detect(videoRef.current);
-          if (codes.length > 0) { stopCamera(); onResult(codes[0].rawValue); return; }
+          if (codes.length > 0) { if(navigator.vibrate) navigator.vibrate(80); stopCamera(); onResult(codes[0].rawValue); return; }
         } catch(e) {}
         requestAnimationFrame(detect);
       };
@@ -771,7 +771,7 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
     r.lang = "id-ID";
     r.interimResults = false;
     r.maxAlternatives = 1;
-    r.onstart  = () => setIsListening(true);
+    r.onstart  = () => { setIsListening(true); if(navigator.vibrate) navigator.vibrate(30); };
     r.onend    = () => setIsListening(false);
     r.onerror  = () => setIsListening(false);
     r.onresult = (e) => {
@@ -1443,6 +1443,7 @@ export default function App() {
   const close    = ()    => setFormData(null);
 
   const saveItem = data => {
+    if(navigator.vibrate) navigator.vibrate(35);
     if (data.id) { setRaw(p=>p.map(i=>i.id===data.id?{...i,...data}:i)); t_("Perubahan disimpan"); }
     else          { setRaw(p=>[{...data,id:Date.now(),markedDown:false},...p]); t_("Barang ditambahkan"); }
     close();
@@ -1454,18 +1455,21 @@ export default function App() {
       const next = !i.markedDown;
       return { ...i, markedDown:next, lastMdPct: next ? (pct||0) : null };
     }));
+    if(navigator.vibrate) navigator.vibrate(40);
     t_("Status markdown diperbarui");
   };
   const onQty = (id,v)=>{ setRaw(p=>p.map(i=>i.id===id?{...i,qty:v}:i)); };
   const onPull= (id, name) => {
     if (!confirm(`Tarik "${name}" dari rak?\n\nBarang akan dipindah ke riwayat dan tidak muncul di board lagi.`)) return;
     setRaw(p=>p.map(i=>i.id===id?{...i,pulled:true,pulledAt:new Date().toISOString()}:i));
+    if(navigator.vibrate) navigator.vibrate([40,30,40]);
     t_("Ditandai sudah ditarik");
   };
   const onRet = (id, name) => {
     const alasan = prompt(`Alasan retur "${name}":\n(opsional, tekan OK untuk skip)`);
     if (alasan === null) return; // cancel/batal
     setRaw(p=>p.map(i=>i.id===id?{...i,returned:true,returnedAt:new Date().toISOString(),returNote:alasan||""}:i));
+    if(navigator.vibrate) navigator.vibrate([40,30,40]);
     t_("Ditandai sudah diretur");
   };
 
