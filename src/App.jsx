@@ -1407,12 +1407,152 @@ function SplashScreen({ onDone }) {
   );
 }
 
+
+// ─── Telegram Notification ───────────────────────────────────────────────────
+const TG_KEY_TOKEN = "expt_tg_token";
+const TG_KEY_CHAT   = "expt_tg_chat";
+const TG_KEY_LASTSENT = "expt_tg_lastsent";
+
+function getTgConfig() {
+  try {
+    return {
+      token: localStorage.getItem(TG_KEY_TOKEN) || "",
+      chatId: localStorage.getItem(TG_KEY_CHAT) || "",
+    };
+  } catch { return { token:"", chatId:"" }; }
+}
+function saveTgConfig(token, chatId) {
+  try {
+    localStorage.setItem(TG_KEY_TOKEN, token);
+    localStorage.setItem(TG_KEY_CHAT, chatId);
+  } catch {}
+}
+
+async function sendTelegram(text) {
+  const { token, chatId } = getTgConfig();
+  if (!token || !chatId) return { ok:false, msg:"Token/Chat ID belum diset" };
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+    const data = await res.json();
+    if (!data.ok) return { ok:false, msg: data.description || "Gagal kirim" };
+    return { ok:true };
+  } catch(e) {
+    return { ok:false, msg: e.message };
+  }
+}
+
+function buildDailySummary(items) {
+  const kritis  = items.filter(i=>i.urg.level>=3 && i.days>=0);
+  const md      = items.filter(i=>i.phase==="pending_md");
+  const pull    = items.filter(i=>i.phase==="pull");
+  const retur   = items.filter(i=>i.phase==="return" && i.days>=0);
+  const expired = items.filter(i=>i.days<0 && i.days>=-7);
+
+  const fmtList = (arr, max=5) => arr.slice(0,max).map(i=>
+    `• ${i.name}${i.gondola?` (${i.section||i.gondola})`:""} — ${i.days<0?"expired":`${i.days}h`}`
+  ).join("\n") + (arr.length>max?`\n...dan ${arr.length-max} lainnya`:"");
+
+  if (kritis.length===0 && md.length===0 && pull.length===0 && retur.length===0) {
+    return `✅ <b>ExpTracker — Semua Aman</b>\n\nTidak ada barang yang perlu tindakan hari ini. 🎉`;
+  }
+
+  let msg = `📦 <b>ExpTracker — Ringkasan Harian</b>\n${new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long"})}\n\n`;
+
+  if (pull.length) msg += `🚨 <b>Siap Tarik (${pull.length})</b>\n${fmtList(pull)}\n\n`;
+  if (md.length)   msg += `🏷️ <b>Perlu Markdown (${md.length})</b>\n${fmtList(md)}\n\n`;
+  if (retur.length)msg += `🔄 <b>Perlu Retur (${retur.length})</b>\n${fmtList(retur)}\n\n`;
+  if (expired.length) msg += `💀 <b>Expired (${expired.length})</b>\n${fmtList(expired,3)}\n\n`;
+
+  msg += `<i>Buka ExpTracker untuk detail & aksi.</i>`;
+  return msg;
+}
+
+
+// ─── Telegram Setup Modal ─────────────────────────────────────────────────────
+function TelegramSetupModal({ onClose, onSaved }) {
+  const cfg = getTgConfig();
+  const [token, setToken]   = useState(cfg.token);
+  const [chatId, setChatId] = useState(cfg.chatId);
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState(null);
+
+  const save = () => {
+    saveTgConfig(token.trim(), chatId.trim());
+    onSaved?.();
+    onClose();
+  };
+
+  const testSend = async () => {
+    saveTgConfig(token.trim(), chatId.trim());
+    setTesting(true);
+    setTestMsg(null);
+    const res = await sendTelegram("✅ <b>ExpTracker terhubung!</b>\n\nNotifikasi harian akan dikirim ke sini setiap kali kamu buka aplikasi.");
+    setTesting(false);
+    setTestMsg(res.ok ? { ok:true, txt:"Berhasil! Cek Telegram kamu." } : { ok:false, txt:res.msg||"Gagal kirim" });
+  };
+
+  return (
+    <div style={{ position:"fixed",inset:0,zIndex:400,background:"rgba(4,5,8,.85)",display:"flex",alignItems:"flex-end" }}>
+      <div style={{ width:"100%",maxHeight:"90vh",overflowY:"auto",background:C.bgSoft,borderRadius:"20px 20px 0 0",padding:"18px 16px 32px",borderTop:`1px solid ${C.lineHi}` }}>
+        <div style={{ width:36,height:4,background:C.line,borderRadius:2,margin:"0 auto 16px" }}/>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16 }}>
+          <span style={{ fontWeight:700,fontSize:16,color:C.text }}>🔔 Notifikasi Telegram</span>
+          <button onClick={onClose} style={{ background:C.cardHi,border:"none",color:C.sub,width:30,height:30,borderRadius:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>{Ic.close}</button>
+        </div>
+
+        <div style={{ background:C.accentDim, border:`1px solid ${C.accentBorder}`, borderRadius:12, padding:"12px 13px", marginBottom:16, fontSize:12, color:C.sub, lineHeight:1.6 }}>
+          Ringkasan barang yang perlu tindakan akan otomatis dikirim ke Telegram <b style={{color:C.accent}}>sekali sehari</b> saat kamu buka aplikasi ini.
+        </div>
+
+        <div style={{ display:"grid", gap:12, marginBottom:16 }}>
+          <div>
+            <div style={{ fontSize:10.5,color:C.sub,marginBottom:5,fontWeight:600 }}>Bot Token</div>
+            <input value={token} onChange={e=>setToken(e.target.value)} placeholder="123456789:AAH..." style={{ width:"100%",background:C.bg,border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 11px",color:C.text,fontSize:12.5,fontFamily:"ui-monospace,monospace" }}/>
+          </div>
+          <div>
+            <div style={{ fontSize:10.5,color:C.sub,marginBottom:5,fontWeight:600 }}>Chat ID</div>
+            <input value={chatId} onChange={e=>setChatId(e.target.value)} placeholder="987654321" style={{ width:"100%",background:C.bg,border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 11px",color:C.text,fontSize:12.5,fontFamily:"ui-monospace,monospace" }}/>
+          </div>
+        </div>
+
+        {testMsg && (
+          <div style={{ background:testMsg.ok?C.greenDim:C.roseDim, border:`1px solid ${testMsg.ok?C.greenBorder:C.roseBorder}`, borderRadius:10, padding:"9px 12px", marginBottom:14, fontSize:12, color:testMsg.ok?C.green:C.rose, fontWeight:600 }}>
+            {testMsg.ok?"✅ ":"❌ "}{testMsg.txt}
+          </div>
+        )}
+
+        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8 }}>
+          <button onClick={testSend} disabled={!token||!chatId||testing} style={{ background:"transparent",border:`1px solid ${C.accentBorder}`,color:C.accent,padding:12,borderRadius:12,fontWeight:700,fontSize:13,cursor:token&&chatId?"pointer":"not-allowed",opacity:token&&chatId?1:.5 }}>
+            {testing?"Mengirim...":"🧪 Test Kirim"}
+          </button>
+          <button onClick={save} disabled={!token||!chatId} style={{ background:C.accent,border:"none",color:"#08090D",padding:12,borderRadius:12,fontWeight:700,fontSize:13,cursor:token&&chatId?"pointer":"not-allowed",opacity:token&&chatId?1:.5 }}>
+            💾 Simpan
+          </button>
+        </div>
+
+        <div style={{ marginTop:16, fontSize:11, color:C.faint, lineHeight:1.7 }}>
+          <b style={{color:C.sub}}>Belum punya bot?</b><br/>
+          1. Chat <b>@BotFather</b> di Telegram, ketik /newbot<br/>
+          2. Salin Token yang diberikan<br/>
+          3. Chat bot kamu, buka <code style={{background:C.cardHi,padding:"1px 5px",borderRadius:4}}>api.telegram.org/bot[TOKEN]/getUpdates</code><br/>
+          4. Cari tulisan <code style={{background:C.cardHi,padding:"1px 5px",borderRadius:4}}>chat id</code> di hasilnya — itu Chat ID kamu
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT ────────────────────────────────────────────────────────────────────
 const BLANK = { barcode:"",name:"",expDate:"",canReturn:true,isImport:false,price:"",qty:"1",gondola:null,section:null };
 
 export default function App() {
   const [isDark,     setIsDark]     = useState(()=>{ try{return localStorage.getItem("exptheme")!=="light"}catch{return true} });
   const [showMore,   setShowMore]   = useState(false);
+  const [showTgSetup,setShowTgSetup]= useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [raw,        setRaw]        = useState(load);
   const [formData, setFormData] = useState(null);
@@ -1437,6 +1577,26 @@ export default function App() {
   const t_ = (m,type="ok") => { setToast({m,type}); setTimeout(()=>setToast(null),2400); };
 
   const items = useMemo(()=>raw.map(enrich),[raw]);
+
+  // Auto-kirim ringkasan Telegram sekali per hari saat app dibuka
+  useEffect(() => {
+    const { token, chatId } = getTgConfig();
+    if (!token || !chatId) return;
+    const today = new Date().toISOString().slice(0,10);
+    let lastSent = null;
+    try { lastSent = localStorage.getItem(TG_KEY_LASTSENT); } catch {}
+    if (lastSent === today) return; // sudah kirim hari ini
+
+    const timer = setTimeout(async () => {
+      const msg = buildDailySummary(items);
+      const res = await sendTelegram(msg);
+      if (res.ok) {
+        try { localStorage.setItem(TG_KEY_LASTSENT, today); } catch {}
+      }
+    }, 2500); // delay biar tidak ganggu splash screen
+
+    return () => clearTimeout(timer);
+  }, [items]);
 
   const openAdd  = ()    => setFormData({...BLANK});
   const openEdit = item  => setFormData({...item, price:item.price||"", qty:String(item.qty||1)});
@@ -1555,6 +1715,7 @@ export default function App() {
       )}
 
       {formData && <FormModal initial={formData} onSave={saveItem} onClose={close} allItems={raw}/>}
+      {showTgSetup && <TelegramSetupModal onClose={()=>setShowTgSetup(false)}/>}
 
       {/* ── Header ── */}
       <div style={{ background:isDark?"rgba(8,11,18,.95)":"rgba(248,250,252,.95)",backdropFilter:"blur(16px)",borderBottom:`1px solid ${C.line}`,padding:"14px 16px",position:"sticky",top:0,zIndex:100 }}>
@@ -1576,9 +1737,21 @@ export default function App() {
           </div>
         </div>
         <div style={{ display:"flex",gap:3,background:C.cardHi,borderRadius:11,padding:3 }}>
-          {[{k:"today",l:"Hari ini"},{k:"gondola",l:"Gondola"},{k:"all",l:"Semua"},{k:"laporan",l:"Laporan"},{k:"catatan",l:"📋 Catat"}].map(t=>(
-            <button key={t.k} onClick={()=>{ setTab(t.k); if(t.k!=="all"){ setFilterG(null); setFilterS(null); } }} style={{ flex:1,background:tab===t.k?C.accent:"transparent",border:"none",color:tab===t.k?"#08090D":C.sub,padding:"7px 0",borderRadius:8,fontSize:12,fontWeight:700 }}>{t.l}</button>
+          {[{k:"today",l:"Hari Ini"},{k:"all",l:"Semua"},{k:"laporan",l:"Laporan"},{k:"catatan",l:"Catat"}].map(t=>(
+            <button key={t.k} onClick={()=>{ setTab(t.k); setFilterG(null); setFilterS(null); setShowMore(false); }} style={{ flex:1,background:tab===t.k?C.accent:"transparent",border:"none",color:tab===t.k?"#08090D":C.sub,padding:"7px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer" }}>{t.l}</button>
           ))}
+          <div style={{ position:"relative" }} onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setShowMore(p=>!p)} style={{ background:showMore?C.accentDim:"transparent",border:"none",color:showMore?C.accent:C.sub,padding:"7px 10px",borderRadius:8,fontSize:16,fontWeight:700,cursor:"pointer",lineHeight:1 }}>⋮</button>
+            {showMore && (
+              <div style={{ position:"absolute",top:"calc(100% + 6px)",right:0,background:C.card,border:`1px solid ${C.line}`,borderRadius:12,padding:5,zIndex:300,minWidth:150,boxShadow:"0 8px 24px rgba(0,0,0,.25)" }}>
+                {[{k:"gondola",l:"🗺️ Gondola"},{k:"analytics",l:"📊 Analitik"}].map(t=>(
+                  <button key={t.k} onClick={()=>{ setTab(t.k); setShowMore(false); }} style={{ display:"block",width:"100%",background:tab===t.k?C.accentDim:"transparent",border:"none",color:tab===t.k?C.accent:C.text,padding:"10px 13px",borderRadius:8,fontSize:13,fontWeight:600,textAlign:"left",cursor:"pointer" }}>{t.l}</button>
+                ))}
+                <div style={{ height:1, background:C.line, margin:"4px 2px" }}/>
+                <button onClick={()=>{ setShowTgSetup(true); setShowMore(false); }} style={{ display:"block",width:"100%",background:"transparent",border:"none",color:C.text,padding:"10px 13px",borderRadius:8,fontSize:13,fontWeight:600,textAlign:"left",cursor:"pointer" }}>🔔 Notifikasi Telegram</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1613,73 +1786,4 @@ export default function App() {
                 const cnt = items.filter(i=>i.gondola===k).length;
                 const urgCnt = items.filter(i=>i.gondola===k&&i.urg.level>=2).length;
                 return (
-                  <button key={k} onClick={()=>{setFilterG(k);setFilterS(null);}} style={{ background:filterG===k?g.dim:C.card,border:`1px solid ${filterG===k?g.border:C.line}`,color:filterG===k?g.color:C.sub,padding:"6px 12px",borderRadius:20,fontSize:11.5,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",gap:6 }}>
-                    {k}
-                    {cnt>0&&<span style={{ opacity:.7 }}>{cnt}</span>}
-                    {urgCnt>0&&<span style={{ width:5,height:5,borderRadius:3,background:C.rose }}/>}
-                  </button>
-                );
-              })}
-            </div>
-
-            {filterG && (
-              <div style={{ display:"flex",gap:6,marginBottom:8,overflowX:"auto",paddingBottom:2 }}>
-                <button onClick={()=>setFilterS(null)} style={{ background:!filterS?C.cardHi:"transparent",border:"none",color:!filterS?C.text:C.faint,padding:"4px 11px",borderRadius:16,fontSize:11,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>
-                  Semua {filterG}
-                </button>
-                {SECTIONS[filterG].map(s=>{
-                  const cnt=items.filter(i=>i.gondola===filterG&&i.section===s).length;
-                  const g=GONDOLAS[filterG];
-                  return (
-                    <button key={s} onClick={()=>setFilterS(s)} style={{ background:filterS===s?g.dim:"transparent",border:`1px solid ${filterS===s?g.border:"transparent"}`,color:filterS===s?g.color:C.faint,padding:"4px 11px",borderRadius:16,fontSize:11,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>
-                      {s}{cnt>0&&` ${cnt}`}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            <div style={{ display:"flex",gap:6,overflowX:"auto",marginBottom:10,paddingBottom:2 }}>
-              {[{k:"all",l:"Semua tipe"},{k:"lokal",l:"Lokal"},{k:"impor",l:"Impor"}].map(f=>(
-                <button key={f.k} onClick={()=>setFilterType(f.k)} style={{ background:filterType===f.k?C.cardHi:"transparent",border:"none",color:filterType===f.k?C.text:C.faint,padding:"4px 11px",borderRadius:16,fontSize:10.5,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>{f.l}</button>
-              ))}
-              <div style={{ width:1,background:C.line,flexShrink:0,margin:"2px 2px" }}/>
-              {[{k:"all",l:"Semua fase"},{k:"pending_md",l:`Antrian ${pc.pending_md}`},{k:"done_md",l:`Sudah MD ${pc.done_md}`},{k:"sold_out",l:`Habis ${pc.sold_out}`},{k:"pull",l:`Tarik ${pc.pull}`},{k:"return",l:`Retur ${pc.return}`},{k:"expired",l:`Expired ${pc.expired}`}].map(f=>(
-                <button key={f.k} onClick={()=>setPhaseF(f.k)} style={{ background:phaseF===f.k?C.cardHi:"transparent",border:"none",color:phaseF===f.k?C.text:C.faint,padding:"4px 11px",borderRadius:16,fontSize:10.5,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>{f.l}</button>
-              ))}
-            </div>
-
-            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
-              <span style={{ fontSize:11,color:C.faint }}>{visible.length} barang</span>
-              <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ background:C.card,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 9px",color:C.sub,fontSize:11,cursor:"pointer" }}>
-                <option value="urgency">Prioritas</option>
-                <option value="exp">Exp terdekat</option>
-                <option value="gondola">Gondola A→D</option>
-                <option value="qty">Stok terendah</option>
-                <option value="name">Nama A-Z</option>
-              </select>
-            </div>
-
-            {visible.length===0 ? (
-              <div style={{ textAlign:"center",padding:"60px 20px",background:C.card,borderRadius:16,border:`1px dashed ${C.line}` }}>
-                <div style={{ color:C.faint,fontSize:13 }}>
-                  {tab==="today"?"Semua gondola aman hari ini":raw.length===0?"Belum ada barang — ketuk Tambah untuk mulai":"Tidak ada hasil"}
-                </div>
-              </div>
-            ) : (
-              <div style={{ display:"flex",flexDirection:"column",gap:9 }}>
-                {visible.map(item=><ActionCard key={item.id} item={item} {...cardProps}/>)}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {!formData && (
-        <button onClick={openAdd} style={{ position:"fixed",bottom:22,right:16,zIndex:200,width:54,height:54,borderRadius:27,background:C.accent,border:"none",color:"#08090D",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 8px 24px rgba(129,140,248,.35)",cursor:"pointer" }}>
-          {Ic.plus}
-        </button>
-      )}
-    </div>
-  );
-}
+                  <button key={k} onClick={()=>{setFilterG(k);setFilterS(null);}} style={{ background:filterG===k?g.dim:C.ca
