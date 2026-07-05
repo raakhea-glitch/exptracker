@@ -1786,10 +1786,41 @@ export default function App() {
                 const cnt = items.filter(i=>i.gondola===k).length;
                 const urgCnt = items.filter(i=>i.gondola===k&&i.urg.level>=2).length;
                 return (
-                  <button key={k} onClick={()=>{setFilterG(k);setFilterS(null);}} style={{ background:filterG===k?g.dim:C.cadHi:"transparent",border:"none",color:phaseF===f.k?C.text:C.faint,padding:"4px 11px",borderRadius:16,fontSize:10.5,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>{f.l}</button>
-              ))}
+                  <button key={k} onClick={()=>{setFilterG(k);setFilterS(null);}} style={{ background:filterG===k?g.dim:C.card,border:`1px solid ${filterG===k?g.border:C.line}`,color:filterG===k?g.color:C.sub,padding:"6px 12px",borderRadius:20,fontSize:11.5,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",gap:6 }}>
+                    {k}
+                    {cnt>0&&<span style={{ opacity:.7 }}>{cnt}</span>}
+                    {urgCnt>0&&<span style={{ width:5,height:5,borderRadius:3,background:C.rose }}/>}
+                  </button>
+                );
+              })}
             </div>
 
+            {filterG && (
+              <div style={{ display:"flex",gap:6,marginBottom:8,overflowX:"auto",paddingBottom:2 }}>
+                <button onClick={()=>setFilterS(null)} style={{ background:!filterS?C.cardHi:"transparent",border:"none",color:!filterS?C.text:C.faint,padding:"4px 11px",borderRadius:16,fontSize:11,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>
+                  Semua {filterG}
+                </button>
+                {SECTIONS[filterG].map(s=>{
+                  const cnt=items.filter(i=>i.gondola===filterG&&i.section===s).length;
+                  const g=GONDOLAS[filterG];
+                  return (
+                    <button key={s} onClick={()=>setFilterS(s)} style={{ background:filterS===s?g.dim:"transparent",border:`1px solid ${filterS===s?g.border:"transparent"}`,color:filterS===s?g.color:C.faint,padding:"4px 11px",borderRadius:16,fontSize:11,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>
+                      {s}{cnt>0&&` ${cnt}`}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ display:"flex",gap:6,overflowX:"auto",marginBottom:10,paddingBottom:2 }}>
+              {[{k:"all",l:"Semua tipe"},{k:"lokal",l:"Lokal"},{k:"impor",l:"Impor"}].map(f=>(
+                <button key={f.k} onClick={()=>setFilterType(f.k)} style={{ background:filterType===f.k?C.cardHi:"transparent",border:"none",color:filterType===f.k?C.text:C.faint,padding:"4px 11px",borderRadius:16,fontSize:10.5,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>{f.l}</button>
+              ))}
+              <div style={{ width:1,background:C.line,flexShrink:0,margin:"2px 2px" }}/>
+              {[{k:"all",l:"Semua fase"},{k:"pending_md",l:`Antrian ${pc.pending_md}`},{k:"done_md",l:`Sudah MD ${pc.done_md}`},{k:"sold_out",l:`Habis ${pc.sold_out}`},{k:"pull",l:`Tarik ${pc.pull}`},{k:"return",l:`Retur ${pc.return}`},{k:"expired",l:`Expired ${pc.expired}`}].map(f=>(
+                <button key={f.k} onClick={()=>setPhaseF(f.k)} style={{ background:phaseF===f.k?C.cardHi:"transparent",border:"none",color:phaseF===f.k?C.text:C.faint,padding:"4px 11px",borderRadius:16,fontSize:10.5,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>{f.l}</button>
+              ))}
+            </div>
 
             <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
               <span style={{ fontSize:11,color:C.faint }}>{visible.length} barang</span>
