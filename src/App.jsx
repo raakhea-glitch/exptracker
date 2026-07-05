@@ -1786,4 +1786,42 @@ export default function App() {
                 const cnt = items.filter(i=>i.gondola===k).length;
                 const urgCnt = items.filter(i=>i.gondola===k&&i.urg.level>=2).length;
                 return (
-                  <button key={k} onClick={()=>{setFilterG(k);setFilterS(null);}} style={{ background:filterG===k?g.dim:C.ca
+                  <button key={k} onClick={()=>{setFilterG(k);setFilterS(null);}} style={{ background:filterG===k?g.dim:C.cadHi:"transparent",border:"none",color:phaseF===f.k?C.text:C.faint,padding:"4px 11px",borderRadius:16,fontSize:10.5,fontWeight:600,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer" }}>{f.l}</button>
+              ))}
+            </div>
+
+
+            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
+              <span style={{ fontSize:11,color:C.faint }}>{visible.length} barang</span>
+              <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ background:C.card,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 9px",color:C.sub,fontSize:11,cursor:"pointer" }}>
+                <option value="urgency">Prioritas</option>
+                <option value="exp">Exp terdekat</option>
+                <option value="gondola">Gondola A→D</option>
+                <option value="qty">Stok terendah</option>
+                <option value="name">Nama A-Z</option>
+              </select>
+            </div>
+
+            {visible.length===0 ? (
+              <div style={{ textAlign:"center",padding:"60px 20px",background:C.card,borderRadius:16,border:`1px dashed ${C.line}` }}>
+                <div style={{ color:C.faint,fontSize:13 }}>
+                  {tab==="today"?"Semua gondola aman hari ini":raw.length===0?"Belum ada barang — ketuk Tambah untuk mulai":"Tidak ada hasil"}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display:"flex",flexDirection:"column",gap:9 }}>
+                {visible.map(item=><ActionCard key={item.id} item={item} {...cardProps}/>)}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {!formData && (
+        <button onClick={openAdd} style={{ position:"fixed",bottom:22,right:16,zIndex:200,width:54,height:54,borderRadius:27,background:C.accent,border:"none",color:"#08090D",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 8px 24px rgba(129,140,248,.35)",cursor:"pointer" }}>
+          {Ic.plus}
+        </button>
+      )}
+    </div>
+  );
+}
