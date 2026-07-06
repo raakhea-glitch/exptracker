@@ -53,7 +53,7 @@ function enrich(item) {
   else if (days <= 7)                                 phase = "pull";
   else if (item.markedDown && qty===0 && !needsUpgrade) phase = "sold_out";
   else if (item.markedDown && !needsUpgrade)          phase = "done_md";
-  else if (md.pct > 0 && effRetur)                    phase = "return";
+  else if (md.tier === "md70" && effRetur)            phase = "return";
   else if (md.pct > 0)                                phase = "pending_md";
   return { ...item, days, md, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0, needsUpgrade,
     disc: orig>0 ? orig*(1-md.pct/100) : 0 };
