@@ -690,9 +690,11 @@ function ActionCard({ item, onMd, onQty, onPull, onRet, onBatalRetur, onEdit, on
           </div>
         )}
         <div style={{ marginLeft:"auto" }}>
-          {item.effRetur
+          {item.phase==="return"
             ? <Pill ch={<>{Ic.ret} Retur</>} color={C.purple} dim={C.purpleDim} bdr={C.purpleBorder}/>
-            : <Pill ch="Tidak retur" color={C.faint} dim={"transparent"} bdr={C.line}/>
+            : item.canReturn
+              ? <Pill ch="Bisa retur nanti" color={C.faint} dim={"transparent"} bdr={C.line}/>
+              : <Pill ch="Tidak retur" color={C.faint} dim={"transparent"} bdr={C.line}/>
           }
         </div>
       </div>
