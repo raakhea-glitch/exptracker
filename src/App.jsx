@@ -37,28 +37,34 @@ function getUrgency(days) {
   return                { level:0, tag:"Aman",     color:"#34D399" };
 }
 function enrich(item) {
-  const days     = getDays(item.expDate);
-  const md       = getMd(days, item.isImport);
-  const urg      = getUrgency(days);
-  const qty      = parseInt(item.qty) || 0;
-  const orig     = parseFloat(item.price) || 0;
-  // effRetur: hormati pilihan manual user (toggle "Bisa Retur" di form).
-  // md.noRetur hanya jadi DEFAULT saat pertama kali barang masuk H-30 (dihandle di FormModal),
-  // bukan dipaksa override di sini — supaya user bisa override manual jika memang bisa retur.
-  const effRetur = item.canReturn;
+  const days = getDays(item.expDate);
+  const urg  = getUrgency(days);
+  const qty  = parseInt(item.qty) || 0;
+  const orig = parseFloat(item.price) || 0;
 
-  // Auto-upgrade: tier naik dari saat diceklis → perlu update harga lagi
+  // Barang "Bisa Retur" (toggle ON) sepenuhnya skip alur markdown.
+  // Tidak ada diskon 30/50/70% sama sekali — dianggap barang normal
+  // sampai masuk H-30, baru dianggap harus diretur ke supplier.
+  const isReturnItem = !!item.canReturn;
+  const rawMd = getMd(days, item.isImport);
+  const md = isReturnItem ? { pct:0, tier:null } : rawMd;
+
+  const effRetur = isReturnItem;
+  const isH30 = days >= 0 && days <= 30; // window H-30, sama seperti tier md70
+
+  // Auto-upgrade: tier naik dari saat diceklis → perlu update harga lagi (hanya utk barang non-retur)
   const needsUpgrade = !!(item.markedDown && md.pct > 0
     && item.lastMdPct != null && md.pct > item.lastMdPct);
 
   let phase = "normal";
   if (days < 0)                                       phase = effRetur ? "return" : "expired";
   else if (days <= 7)                                 phase = "pull";
-  else if (md.tier === "md70" && effRetur)            phase = "return";  // H-30 & bisa retur → selalu ke Retur, skip markdown
+  else if (isReturnItem && isH30)                      phase = "return";   // barang retur & H-30 → langsung Retur
+  else if (isReturnItem)                              phase = "normal";    // barang retur & belum H-30 → normal, skip markdown total
   else if (item.markedDown && qty===0 && !needsUpgrade) phase = "sold_out";
   else if (item.markedDown && !needsUpgrade)          phase = "done_md";
   else if (md.pct > 0)                                phase = "pending_md";
-  return { ...item, days, md, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0, needsUpgrade,
+  return { ...item, days, md, urg, phase, qty, orig, effRetur, skipMd: isReturnItem, needsUpgrade,
     disc: orig>0 ? orig*(1-md.pct/100) : 0 };
 }
 
@@ -803,7 +809,10 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
     ? allItems.find(i => i.barcode === f.barcode.trim() && i.id !== (initial.id||null))
     : null;
   const days   = f.expDate ? getDays(f.expDate) : null;
-  const mdPrev = days!==null ? getMd(days, f.isImport) : null;
+  const rawMdPrev = days!==null ? getMd(days, f.isImport) : null;
+  const isH30Prev = days!==null && days>=0 && days<=30;
+  // Kalau toggle "Bisa Retur" aktif, skip semua preview diskon — tampilkan info retur H-30 saja
+  const mdPrev = f.canReturn ? null : rawMdPrev;
 
   const submit = () => {
     if (!f.barcode.trim()||!f.name.trim()||!f.expDate) return;
@@ -927,12 +936,12 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
             <div style={{ display:"flex",alignItems:"center",gap:10 }}>
               <Toggle on={f.canReturn} onChange={v=>set("canReturn",v)}/>
               <span style={{ fontSize:12.5,color:f.canReturn?C.purple:C.faint,fontWeight:600 }}>
-                {f.canReturn?"Bisa diretur":"Tidak bisa diretur"}{mdPrev?.noRetur&&!f.canReturn?" — default diskon 70%":""}
+                {f.canReturn?"Bisa diretur — skip markdown":"Tidak bisa diretur"}
               </span>
             </div>
-            {mdPrev?.noRetur && (
+            {f.canReturn && (
               <div style={{ fontSize:11, color:C.faint, marginTop:-4 }}>
-                💡 Barang diskon 70% biasanya tidak diretur, tapi kamu bisa aktifkan toggle di atas kalau memang bisa.
+                💡 Barang ini tidak akan masuk diskon markdown. Dianggap normal sampai H-30, baru muncul di notif "perlu diretur ke supplier".
               </div>
             )}
 
@@ -951,6 +960,14 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
                 <span style={{ color:getMDC()[mdPrev.tier].t }}>{Ic.tag}</span>
                 <span style={{ fontSize:12.5,color:getMDC()[mdPrev.tier].t,fontWeight:700 }}>
                   Otomatis diskon {mdPrev.pct}%{f.price>0&&` — ${fmtRp(f.price*(1-mdPrev.pct/100))}`}
+                </span>
+              </div>
+            )}
+            {f.canReturn && days!==null && days>=0 && (
+              <div style={{ background:C.purpleDim, border:`1px solid ${C.purpleBorder}`, borderRadius:11, padding:"10px 13px", display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ color:C.purple }}>{Ic.ret}</span>
+                <span style={{ fontSize:12.5, color:C.purple, fontWeight:700 }}>
+                  {isH30Prev ? "Sudah H-30 — masuk notif retur sekarang" : `Akan masuk notif retur saat H-30 (${days-30} hari lagi)`}
                 </span>
               </div>
             )}
