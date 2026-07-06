@@ -42,7 +42,10 @@ function enrich(item) {
   const urg      = getUrgency(days);
   const qty      = parseInt(item.qty) || 0;
   const orig     = parseFloat(item.price) || 0;
-  const effRetur = md.noRetur ? false : item.canReturn;
+  // effRetur: hormati pilihan manual user (toggle "Bisa Retur" di form).
+  // md.noRetur hanya jadi DEFAULT saat pertama kali barang masuk H-30 (dihandle di FormModal),
+  // bukan dipaksa override di sini — supaya user bisa override manual jika memang bisa retur.
+  const effRetur = item.canReturn;
 
   // Auto-upgrade: tier naik dari saat diceklis → perlu update harga lagi
   const needsUpgrade = !!(item.markedDown && md.pct > 0
@@ -51,9 +54,9 @@ function enrich(item) {
   let phase = "normal";
   if (days < 0)                                       phase = effRetur ? "return" : "expired";
   else if (days <= 7)                                 phase = "pull";
+  else if (md.tier === "md70" && effRetur)            phase = "return";  // H-30 & bisa retur → selalu ke Retur, skip markdown
   else if (item.markedDown && qty===0 && !needsUpgrade) phase = "sold_out";
   else if (item.markedDown && !needsUpgrade)          phase = "done_md";
-  else if (md.tier === "md70" && effRetur)            phase = "return";
   else if (md.pct > 0)                                phase = "pending_md";
   return { ...item, days, md, urg, phase, qty, orig, effRetur, skipMd: effRetur && md.pct > 0, needsUpgrade,
     disc: orig>0 ? orig*(1-md.pct/100) : 0 };
@@ -920,11 +923,16 @@ function FormModal({ initial, onSave, onClose, allItems=[] }) {
             </div>
 
             <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-              <Toggle on={mdPrev?.noRetur?false:f.canReturn} onChange={v=>set("canReturn",v)} disabled={!!mdPrev?.noRetur}/>
-              <span style={{ fontSize:12.5,color:mdPrev?.noRetur?C.rose:f.canReturn?C.purple:C.faint,fontWeight:600 }}>
-                {mdPrev?.noRetur?"Tidak bisa retur — diskon 70%":f.canReturn?"Bisa diretur":"Tidak bisa diretur"}
+              <Toggle on={f.canReturn} onChange={v=>set("canReturn",v)}/>
+              <span style={{ fontSize:12.5,color:f.canReturn?C.purple:C.faint,fontWeight:600 }}>
+                {f.canReturn?"Bisa diretur":"Tidak bisa diretur"}{mdPrev?.noRetur&&!f.canReturn?" — default diskon 70%":""}
               </span>
             </div>
+            {mdPrev?.noRetur && (
+              <div style={{ fontSize:11, color:C.faint, marginTop:-4 }}>
+                💡 Barang diskon 70% biasanya tidak diretur, tapi kamu bisa aktifkan toggle di atas kalau memang bisa.
+              </div>
+            )}
 
             {/* Warning tanggal backdate / expired */}
             {days !== null && days < 0 && (
