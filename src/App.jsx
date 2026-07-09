@@ -7,12 +7,25 @@ const GONDOLAS = {
   C: { label:"Gondola C", color:"#34D399", dim:"rgba(52,211,153,.13)", border:"rgba(52,211,153,.32)"  },
   D: { label:"Gondola D", color:"#FBBF24", dim:"rgba(251,191,36,.13)", border:"rgba(251,191,36,.32)"  },
 };
-const SECTIONS = {
+const SECTIONS_KEY = "expt_sections";
+const DEFAULT_SECTIONS = {
   A: ["A1","A2","A3","A4","A5","A6"],
   B: ["B1","B2","B3","B4","B5","B6"],
   C: ["C1","C2","C3","C4","C5","C6"],
   D: ["D1","D2","D3","D4","D5","D6"],
 };
+function loadSections() {
+  try {
+    const raw = localStorage.getItem(SECTIONS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { ...DEFAULT_SECTIONS };
+}
+function saveSections(s) {
+  try { localStorage.setItem(SECTIONS_KEY, JSON.stringify(s)); } catch {}
+}
+// SECTIONS jadi variable mutable — di-refresh oleh SectionsProvider di App root
+let SECTIONS = loadSections();
 
 // ─── Business logic ────────────────────────────────────────────────────────
 function getDays(expDate) {
@@ -88,6 +101,44 @@ const load = () => {
   } catch { return []; }
 };
 const persist = d  => { try { localStorage.setItem(SK, JSON.stringify(d)); } catch {} };
+
+// ─── Jadwal Cek Gondola — storage & helper ───────────────────────────────────
+const CHECK_SCHEDULE_KEY = "expt_check_schedule"; // { "A1": ["mon","tue",...], ... }
+const CHECK_LOG_KEY      = "expt_check_log";      // { "2026-07-10": { "A1": true, ... } }
+
+const ALL_SECTIONS_FLAT = Object.entries(SECTIONS).flatMap(([g,secs])=>secs.map(s=>({gondola:g, section:s})));
+const DAY_KEYS = ["sun","mon","tue","wed","thu","fri","sat"];
+const DAY_LABELS = { sun:"Min", mon:"Sen", tue:"Sel", wed:"Rab", thu:"Kam", fri:"Jum", sat:"Sab" };
+
+function loadCheckSchedule() {
+  try {
+    const raw = localStorage.getItem(CHECK_SCHEDULE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  // Default: semua sub-bagian dicek setiap hari
+  const def = {};
+  ALL_SECTIONS_FLAT.forEach(({section}) => { def[section] = [...DAY_KEYS]; });
+  return def;
+}
+function saveCheckSchedule(sched) {
+  try { localStorage.setItem(CHECK_SCHEDULE_KEY, JSON.stringify(sched)); } catch {}
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0,10); // YYYY-MM-DD
+}
+function todayDayCode() {
+  return DAY_KEYS[new Date().getDay()];
+}
+function loadCheckLog() {
+  try {
+    const raw = localStorage.getItem(CHECK_LOG_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+function saveCheckLog(log) {
+  try { localStorage.setItem(CHECK_LOG_KEY, JSON.stringify(log)); } catch {}
+}
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 const fmtRp = n => "Rp "+Number(n).toLocaleString("id-ID");
@@ -1573,6 +1624,227 @@ function TelegramSetupModal({ onClose, onSaved }) {
   );
 }
 
+
+// ─── Jadwal Cek Gondola View ──────────────────────────────────────────────────
+function JadwalCekView() {
+  const [schedule, setSchedule] = useState(loadCheckSchedule);
+  const [checkLog, setCheckLog] = useState(loadCheckLog);
+  const [editMode, setEditMode] = useState(false);
+  const [editSections, setEditSections] = useState(false);
+  const [selGondola, setSelGondola] = useState("A");
+  const [sectionsVersion, setSectionsVersion] = useState(0); // trigger re-render saat SECTIONS berubah
+  const [newSectionName, setNewSectionName] = useState("");
+
+  const today = todayKey();
+  const todayDay = todayDayCode();
+  const todayLog = checkLog[today] || {};
+
+  const addSection = () => {
+    const name = newSectionName.trim().toUpperCase();
+    if (!name) return;
+    if (SECTIONS[selGondola].includes(name)) { alert("Sub-bagian ini sudah ada"); return; }
+    SECTIONS = { ...SECTIONS, [selGondola]: [...SECTIONS[selGondola], name] };
+    saveSections(SECTIONS);
+    setNewSectionName("");
+    setSectionsVersion(v=>v+1);
+  };
+
+  const removeSection = (section) => {
+    if (!confirm(`Hapus sub-bagian "${section}"?\n\nBarang yang ada di sub-bagian ini tidak akan terhapus, hanya kehilangan label lokasi.`)) return;
+    SECTIONS = { ...SECTIONS, [selGondola]: SECTIONS[selGondola].filter(s=>s!==section) };
+    saveSections(SECTIONS);
+    // Bersihkan jadwal & log untuk section yang dihapus
+    setSchedule(prev => { const next={...prev}; delete next[section]; return next; });
+    setSectionsVersion(v=>v+1);
+  };
+
+  useEffect(()=>saveCheckSchedule(schedule), [schedule]);
+  useEffect(()=>saveCheckLog(checkLog), [checkLog]);
+
+  // Bersihkan log lebih dari 14 hari biar tidak menumpuk
+  useEffect(() => {
+    const cutoff = Date.now() - 14*86400000;
+    setCheckLog(prev => {
+      const cleaned = {};
+      Object.entries(prev).forEach(([date, val]) => {
+        if (new Date(date).getTime() >= cutoff) cleaned[date] = val;
+      });
+      return cleaned;
+    });
+  }, []);
+
+  const toggleCheck = (section) => {
+    setCheckLog(prev => {
+      const dayData = { ...(prev[today]||{}) };
+      dayData[section] = !dayData[section];
+      if(navigator.vibrate) navigator.vibrate(30);
+      return { ...prev, [today]: dayData };
+    });
+  };
+
+  const toggleScheduleDay = (section, day) => {
+    setSchedule(prev => {
+      const days = prev[section] || [];
+      const next = days.includes(day) ? days.filter(d=>d!==day) : [...days, day];
+      return { ...prev, [section]: next };
+    });
+  };
+
+  // Sub-bagian yang dijadwalkan hari ini
+  const scheduledToday = ALL_SECTIONS_FLAT.filter(({section}) => (schedule[section]||[]).includes(todayDay));
+  const checkedCount = scheduledToday.filter(({section}) => todayLog[section]).length;
+  const totalToday = scheduledToday.length;
+  const pct = totalToday>0 ? Math.round((checkedCount/totalToday)*100) : 100;
+
+  return (
+    <div key={sectionsVersion}>
+      {/* Progress hari ini */}
+      <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:16, padding:"15px 16px", marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+          <div>
+            <div style={{ fontSize:15, fontWeight:700, color:C.text }}>Progress Cek Hari Ini</div>
+            <div style={{ fontSize:11, color:C.faint, marginTop:2 }}>
+              {new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long"})}
+            </div>
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:22, fontWeight:900, color: pct===100?C.green:C.accent, fontVariantNumeric:"tabular-nums" }}>
+              {checkedCount}/{totalToday}
+            </div>
+            <div style={{ fontSize:9, color:C.faint }}>sub-bagian</div>
+          </div>
+        </div>
+        <div style={{ height:8, background:C.cardHi, borderRadius:4, overflow:"hidden" }}>
+          <div style={{ height:"100%", width:`${pct}%`, background: pct===100?C.green:C.accent, borderRadius:4, transition:"width .4s" }}/>
+        </div>
+        {totalToday===0 && (
+          <div style={{ fontSize:11.5, color:C.faint, marginTop:10, textAlign:"center" }}>
+            Tidak ada sub-bagian dijadwalkan hari ini. Atur jadwal di bawah.
+          </div>
+        )}
+        {totalToday>0 && pct===100 && (
+          <div style={{ fontSize:12, color:C.green, marginTop:10, textAlign:"center", fontWeight:600 }}>
+            ✅ Semua sub-bagian hari ini sudah dicek!
+          </div>
+        )}
+      </div>
+
+      {/* Toggle edit mode */}
+      <div style={{ display:"flex", justifyContent:"flex-end", gap:7, marginBottom:10 }}>
+        <button onClick={()=>{setEditSections(p=>!p); setEditMode(false);}} style={{ background:editSections?C.accentDim:"transparent", border:`1px solid ${editSections?C.accentBorder:C.line}`, color:editSections?C.accent:C.sub, padding:"6px 13px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+          {editSections ? "✓ Selesai" : "🧱 Atur Sub-Bagian"}
+        </button>
+        <button onClick={()=>{setEditMode(p=>!p); setEditSections(false);}} style={{ background:editMode?C.accentDim:"transparent", border:`1px solid ${editMode?C.accentBorder:C.line}`, color:editMode?C.accent:C.sub, padding:"6px 13px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+          {editMode ? "✓ Selesai" : "⚙️ Atur Jadwal"}
+        </button>
+      </div>
+
+      {/* Gondola selector */}
+      <div style={{ display:"flex", gap:6, marginBottom:12 }}>
+        {Object.entries(GONDOLAS).map(([k,g])=>{
+          const gSecs = SECTIONS[k];
+          const gScheduledToday = gSecs.filter(s=>(schedule[s]||[]).includes(todayDay));
+          const gCheckedToday = gScheduledToday.filter(s=>todayLog[s]).length;
+          return (
+            <button key={k} onClick={()=>setSelGondola(k)} style={{ flex:1, background:selGondola===k?g.dim:C.card, border:`1.5px solid ${selGondola===k?g.border:C.line}`, borderRadius:11, padding:"9px 6px", cursor:"pointer" }}>
+              <div style={{ fontSize:14, fontWeight:800, color:selGondola===k?g.color:C.sub }}>{k}</div>
+              {gScheduledToday.length>0 && (
+                <div style={{ fontSize:9, color:gCheckedToday===gScheduledToday.length?C.green:C.faint, marginTop:2 }}>
+                  {gCheckedToday}/{gScheduledToday.length}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* List sub-bagian untuk gondola terpilih */}
+      {editSections ? (
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          <div style={{ background:C.accentDim, border:`1px solid ${C.accentBorder}`, borderRadius:11, padding:"10px 12px", fontSize:11.5, color:C.sub, marginBottom:2 }}>
+            Atur jumlah sub-bagian gondola <b style={{color:C.accent}}>{selGondola}</b> sesuai kondisi rak sebenarnya — bisa beda-beda tiap gondola.
+          </div>
+          {SECTIONS[selGondola].map(section => (
+            <div key={section} style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:12, padding:"11px 13px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <span style={{ fontWeight:700, fontSize:13.5, color:C.text }}>{section}</span>
+              <button onClick={()=>removeSection(section)} style={{ background:C.roseDim, border:`1px solid ${C.roseBorder}`, color:C.rose, padding:"5px 11px", borderRadius:8, fontSize:11.5, fontWeight:600, cursor:"pointer" }}>
+                Hapus
+              </button>
+            </div>
+          ))}
+          {/* Tambah baru */}
+          <div style={{ display:"flex", gap:7, marginTop:4 }}>
+            <input
+              value={newSectionName}
+              onChange={e=>setNewSectionName(e.target.value)}
+              placeholder={`Nama baru, mis. ${selGondola}${SECTIONS[selGondola].length+1}`}
+              style={{ flex:1, background:C.bg, border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 12px", color:C.text, fontSize:13 }}
+              onKeyDown={e=>{ if(e.key==="Enter") addSection(); }}
+            />
+            <button onClick={addSection} style={{ background:C.accent, border:"none", color:"#08090D", padding:"10px 18px", borderRadius:10, fontWeight:700, fontSize:13, cursor:"pointer" }}>
+              + Tambah
+            </button>
+          </div>
+          {SECTIONS[selGondola].length===0 && (
+            <div style={{ textAlign:"center", padding:"20px 0", color:C.faint, fontSize:12.5 }}>
+              Belum ada sub-bagian di gondola {selGondola}. Tambahkan di atas.
+            </div>
+          )}
+        </div>
+      ) : (
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {SECTIONS[selGondola].map(section => {
+          const isScheduledToday = (schedule[section]||[]).includes(todayDay);
+          const isChecked = !!todayLog[section];
+          const g = GONDOLAS[selGondola];
+
+          if (editMode) {
+            // Mode edit: tampilkan 7 toggle hari
+            return (
+              <div key={section} style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:13, padding:"12px 13px" }}>
+                <div style={{ fontWeight:700, fontSize:13, color:C.text, marginBottom:9 }}>{section}</div>
+                <div style={{ display:"flex", gap:5 }}>
+                  {DAY_KEYS.map(day => {
+                    const active = (schedule[section]||[]).includes(day);
+                    return (
+                      <button key={day} onClick={()=>toggleScheduleDay(section, day)} style={{ flex:1, background:active?g.dim:C.cardHi, border:`1px solid ${active?g.border:C.line}`, color:active?g.color:C.faint, padding:"7px 0", borderRadius:8, fontSize:10.5, fontWeight:700, cursor:"pointer" }}>
+                        {DAY_LABELS[day]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
+          // Mode normal: checklist harian
+          if (!isScheduledToday) return (
+            <div key={section} style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:13, padding:"12px 13px", opacity:.4, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <span style={{ fontWeight:700, fontSize:13, color:C.faint }}>{section}</span>
+              <span style={{ fontSize:10.5, color:C.faint }}>Tidak dijadwalkan hari ini</span>
+            </div>
+          );
+
+          return (
+            <div key={section} onClick={()=>toggleCheck(section)} style={{ background:isChecked?C.greenDim:C.card, border:`1.5px solid ${isChecked?C.greenBorder:C.line}`, borderRadius:13, padding:"13px 14px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", transition:"all .15s" }}>
+              <div style={{ width:26, height:26, borderRadius:8, border:`2px solid ${isChecked?C.green:C.line}`, background:isChecked?C.green:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                {isChecked && <span style={{ color:"#08090D", fontSize:15, fontWeight:900 }}>✓</span>}
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:700, fontSize:14, color:isChecked?C.green:C.text }}>{section}</div>
+                <div style={{ fontSize:10.5, color:C.faint, marginTop:1 }}>
+                  {isChecked ? "Sudah dicek hari ini" : "Belum dicek — tap untuk tandai"}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ROOT ────────────────────────────────────────────────────────────────────
 const BLANK = { barcode:"",name:"",expDate:"",canReturn:true,isImport:false,price:"",qty:"1",gondola:null,section:null };
 
@@ -1645,7 +1917,14 @@ export default function App() {
     if(navigator.vibrate) navigator.vibrate(40);
     t_("Status markdown diperbarui");
   };
-  const onQty = (id,v)=>{ setRaw(p=>p.map(i=>i.id===id?{...i,qty:v}:i)); };
+  const onQty = (id,v)=>{
+    setRaw(p=>p.map(i=>{
+      if (i.id!==id) return i;
+      // Catat waktu pertama kali qty jadi 0 (untuk auto-arsip 3 hari kemudian)
+      const justSoldOut = v===0 && i.markedDown && i.qty>0;
+      return { ...i, qty:v, soldOutAt: justSoldOut ? new Date().toISOString() : (v>0 ? null : i.soldOutAt) };
+    }));
+  };
   const onPull= (id, name) => {
     if (!confirm(`Tarik "${name}" dari rak?\n\nBarang akan dipindah ke riwayat dan tidak muncul di board lagi.`)) return;
     setRaw(p=>p.map(i=>i.id===id?{...i,pulled:true,pulledAt:new Date().toISOString()}:i));
@@ -1700,6 +1979,19 @@ export default function App() {
     if (phaseF!=="all")  arr=arr.filter(i=>i.phase===phaseF);
     // Auto arsip: expired lebih dari 7 hari yang lalu tidak tampil di board (kecuali tab arsip)
     if (tab!=="arsip") arr=arr.filter(i=>!(i.days < -7));
+    // Auto arsip: barang sudah ditarik dari rak → langsung hilang dari board (pindah ke riwayat/laporan)
+    if (tab!=="arsip" && phaseF!=="pull") arr=arr.filter(i=>!i.pulled);
+    // Auto arsip: barang sudah diretur → langsung hilang dari board (pindah ke riwayat/laporan)
+    // (skip kalau user sengaja filter fase "return" — biar tetap bisa dicek manual)
+    if (tab!=="arsip" && phaseF!=="return") arr=arr.filter(i=>!i.returned);
+    // Auto arsip: markdown habis terjual (qty=0) lebih dari 3 hari → hilang dari board
+    // (skip kalau user sengaja filter fase "sold_out")
+    if (tab!=="arsip" && phaseF!=="sold_out") arr=arr.filter(i=>{
+      if (i.phase!=="sold_out") return true;
+      if (!i.soldOutAt) return true; // belum ada timestamp, tetap tampil dulu
+      const daysSinceSoldOut = Math.floor((Date.now()-new Date(i.soldOutAt).getTime())/86400000);
+      return daysSinceSoldOut < 3;
+    });
     if (tab==="today")   arr=arr.filter(i=>i.urg.level>=1);
     return [...arr].sort((a,b)=>{
       if (sortBy==="urgency") return b.urg.level-a.urg.level||a.days-b.days;
@@ -1771,7 +2063,7 @@ export default function App() {
             <button onClick={()=>setShowMore(p=>!p)} style={{ background:showMore?C.accentDim:"transparent",border:"none",color:showMore?C.accent:C.sub,padding:"7px 10px",borderRadius:8,fontSize:16,fontWeight:700,cursor:"pointer",lineHeight:1 }}>⋮</button>
             {showMore && (
               <div style={{ position:"absolute",top:"calc(100% + 6px)",right:0,background:C.card,border:`1px solid ${C.line}`,borderRadius:12,padding:5,zIndex:300,minWidth:150,boxShadow:"0 8px 24px rgba(0,0,0,.25)" }}>
-                {[{k:"gondola",l:"🗺️ Gondola"},{k:"analytics",l:"📊 Analitik"}].map(t=>(
+                {[{k:"gondola",l:"🗺️ Gondola"},{k:"analytics",l:"📊 Analitik"},{k:"jadwal",l:"📅 Jadwal Cek"}].map(t=>(
                   <button key={t.k} onClick={()=>{ setTab(t.k); setShowMore(false); }} style={{ display:"block",width:"100%",background:tab===t.k?C.accentDim:"transparent",border:"none",color:tab===t.k?C.accent:C.text,padding:"10px 13px",borderRadius:8,fontSize:13,fontWeight:600,textAlign:"left",cursor:"pointer" }}>{t.l}</button>
                 ))}
                 <div style={{ height:1, background:C.line, margin:"4px 2px" }}/>
@@ -1785,6 +2077,8 @@ export default function App() {
       <div style={{ padding:"14px 14px 0" }}>
 
         {tab==="gondola" && <GondolaMapView items={items} onFilter={handleGondolaFilter}/>}
+        {tab==="analytics" && <Analytics items={items}/>}
+        {tab==="jadwal" && <JadwalCekView/>}
         {tab==="catatan" && <CatatanView items={raw.map(enrich)} onEdit={openEdit}/>}
         {tab==="laporan" && <LaporanView items={raw} onBatalRetur={onBatalRetur}/>}
 
