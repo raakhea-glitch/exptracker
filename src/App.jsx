@@ -9,13 +9,25 @@ const GONDOLAS = {
 };
 const SECTIONS_KEY = "expt_sections";
 const DEFAULT_SECTIONS = {
-  A: ["A1","A2","A3","A4","A5","A6"],
-  B: ["B1","B2","B3","B4","B5","B6"],
-  C: ["C1","C2","C3","C4","C5","C6"],
-  D: ["D1","D2","D3","D4","D5","D6"],
+  A: ["A1","A2","A3","A4","A5","A6","A7","A8","A9","A10"],
+  B: ["B1","B2","B3","B4","B5","B6","B7","B8","B9","B10","B11","B12"],
+  C: ["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11","C12","C13"],
+  D: ["D1","D2","D3","D4","D5","D6","D7","D8","D9","D10","D11","D12"],
 };
+const SECTIONS_VERSION = 2; // naikkan angka ini kalau DEFAULT_SECTIONS diubah lagi nanti
+const SECTIONS_VERSION_KEY = "expt_sections_version";
 function loadSections() {
   try {
+    const savedVersion = parseInt(localStorage.getItem(SECTIONS_VERSION_KEY)||"0");
+    if (savedVersion < SECTIONS_VERSION) {
+      // Versi lama — pakai default baru, tapi jangan timpa kalau user sudah pernah custom manual
+      // (kita anggap belum custom kalau tidak ada key SECTIONS_KEY sama sekali sebelumnya, atau versinya 0)
+      localStorage.setItem(SECTIONS_VERSION_KEY, String(SECTIONS_VERSION));
+      if (savedVersion === 0) {
+        localStorage.setItem(SECTIONS_KEY, JSON.stringify(DEFAULT_SECTIONS));
+        return { ...DEFAULT_SECTIONS };
+      }
+    }
     const raw = localStorage.getItem(SECTIONS_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
@@ -408,9 +420,72 @@ function GondolaPicker({ gondola, section, onChange }) {
 }
 
 // ─── Gondola Map View ────────────────────────────────────────────────────────
+const DENAH_KEY = "expt_denah_photo";
+
+function DenahUpload() {
+  const [photo, setPhoto] = useState(()=>{ try{return localStorage.getItem(DENAH_KEY);}catch{return null;} });
+  const [showFull, setShowFull] = useState(false);
+  const fileRef = useRef(null);
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { localStorage.setItem(DENAH_KEY, reader.result); } catch {}
+      setPhoto(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removePhoto = () => {
+    if (!confirm("Hapus foto denah?")) return;
+    try { localStorage.removeItem(DENAH_KEY); } catch {}
+    setPhoto(null);
+  };
+
+  return (
+    <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:14, padding:"13px 14px", marginBottom:14 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:photo?10:0 }}>
+        <div style={{ fontWeight:700, fontSize:12.5, color:C.sub }}>📋 Denah Gondola</div>
+        <div style={{ display:"flex", gap:6 }}>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display:"none" }}/>
+          <button onClick={()=>fileRef.current?.click()} style={{ background:C.accentDim, border:`1px solid ${C.accentBorder}`, color:C.accent, padding:"6px 12px", borderRadius:8, fontSize:11.5, fontWeight:600, cursor:"pointer" }}>
+            {photo ? "Ganti" : "+ Upload Foto"}
+          </button>
+          {photo && (
+            <button onClick={removePhoto} style={{ background:"transparent", border:`1px solid ${C.line}`, color:C.faint, padding:"6px 12px", borderRadius:8, fontSize:11.5, cursor:"pointer" }}>
+              Hapus
+            </button>
+          )}
+        </div>
+      </div>
+      {photo && (
+        <img
+          src={photo}
+          onClick={()=>setShowFull(true)}
+          style={{ width:"100%", borderRadius:10, cursor:"pointer", display:"block" }}
+          alt="Denah gondola"
+        />
+      )}
+      {!photo && (
+        <div style={{ fontSize:11.5, color:C.faint, textAlign:"center", padding:"14px 0" }}>
+          Belum ada foto denah. Upload untuk referensi visual layout gondola.
+        </div>
+      )}
+      {showFull && (
+        <div onClick={()=>setShowFull(false)} style={{ position:"fixed", inset:0, zIndex:600, background:"rgba(0,0,0,.9)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+          <img src={photo} style={{ maxWidth:"100%", maxHeight:"90vh", borderRadius:12 }} alt="Denah gondola full"/>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GondolaMapView({ items, onFilter }) {
   return (
     <div style={{ marginBottom:16 }}>
+      <DenahUpload/>
       <div style={{ fontWeight:700,fontSize:12.5,color:C.sub,marginBottom:11,display:"flex",alignItems:"center",gap:7,letterSpacing:".2px" }}>{Ic.map} Peta Gondola</div>
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
         {Object.entries(GONDOLAS).map(([gKey,g])=>{
@@ -1258,16 +1333,17 @@ function LaporanView({ items, onBatalRetur }) {
 
 
 // ─── Catatan View — list sederhana buat referensi form kertas ─────────────────
-function CatatanView({ items, onEdit }) {
+function CatatanView({ items, onEdit, onToggleCatat }) {
   const [sortG,   setSortG]   = useState("all");   // filter gondola
   const [sortCol, setSortCol] = useState("exp");   // sort kolom
   const [phase,   setPhase]   = useState("all");   // filter status
   const [search,  setSearch]  = useState("");
+  const [hideCatat, setHideCatat] = useState(false); // sembunyikan yang sudah dicatat
 
   const fmtExp = d => new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit",year:"2-digit"});
 
   // Filter & sort
-  const list = items
+  const filtered = items
     .filter(i => {
       if (sortG !== "all" && i.gondola !== sortG) return false;
       if (phase === "md"  && i.md.pct === 0) return false;
@@ -1278,8 +1354,17 @@ function CatatanView({ items, onEdit }) {
         return i.name.toLowerCase().includes(q) || i.barcode.includes(q);
       }
       return true;
-    })
+    });
+
+  const totalCount   = filtered.length;
+  const catatCount   = filtered.filter(i=>i.dicatat).length;
+  const belumCount   = totalCount - catatCount;
+
+  const list = filtered
+    .filter(i => hideCatat ? !i.dicatat : true)
     .sort((a,b) => {
+      // Yang belum dicatat selalu di atas
+      if (!!a.dicatat !== !!b.dicatat) return a.dicatat ? 1 : -1;
       if (sortCol === "gondola") return (a.gondola||"Z").localeCompare(b.gondola||"Z") || (a.section||"").localeCompare(b.section||"");
       if (sortCol === "exp")     return a.days - b.days;
       if (sortCol === "name")    return a.name.localeCompare(b.name);
@@ -1300,6 +1385,22 @@ function CatatanView({ items, onEdit }) {
 
   return (
     <div>
+      {/* Progress pencatatan */}
+      <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:14, padding:"13px 14px", marginBottom:12 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:9 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Progress Pencatatan</div>
+          <div style={{ fontSize:17, fontWeight:900, color:belumCount===0&&totalCount>0?C.green:C.accent, fontVariantNumeric:"tabular-nums" }}>
+            {catatCount}/{totalCount}
+          </div>
+        </div>
+        <div style={{ height:7, background:C.cardHi, borderRadius:4, overflow:"hidden" }}>
+          <div style={{ height:"100%", width:totalCount>0?`${(catatCount/totalCount)*100}%`:"0%", background:belumCount===0&&totalCount>0?C.green:C.accent, borderRadius:4, transition:"width .3s" }}/>
+        </div>
+        {totalCount>0 && belumCount===0 && (
+          <div style={{ fontSize:11.5, color:C.green, marginTop:8, fontWeight:600, textAlign:"center" }}>✅ Semua sudah dicatat!</div>
+        )}
+      </div>
+
       {/* Filter bar */}
       <div style={{ display:"flex", gap:7, marginBottom:10, flexWrap:"wrap", alignItems:"center" }}>
         {/* Gondola filter */}
@@ -1317,6 +1418,10 @@ function CatatanView({ items, onEdit }) {
           <option value="pull">Siap tarik</option>
           <option value="retur">Retur</option>
         </select>
+        {/* Hide sudah dicatat */}
+        <button onClick={()=>setHideCatat(p=>!p)} style={{ background:hideCatat?C.greenDim:C.card, border:`1px solid ${hideCatat?C.greenBorder:C.line}`, color:hideCatat?C.green:C.sub, padding:"5px 11px", borderRadius:8, fontSize:11.5, fontWeight:600, cursor:"pointer", marginLeft:"auto" }}>
+          {hideCatat ? "✓ Sembunyikan yg dicatat" : "Tampilkan semua"}
+        </button>
       </div>
 
       {/* Search */}
@@ -1326,8 +1431,8 @@ function CatatanView({ items, onEdit }) {
       </div>
 
       {/* Sort header — tap untuk sort */}
-      <div style={{ display:"grid", gridTemplateColumns:"32px 1fr 90px 56px 44px", gap:0, background:C.cardHi, borderRadius:"10px 10px 0 0", padding:"8px 10px", marginBottom:1 }}>
-        <div style={{ fontSize:10, color:C.faint, fontWeight:700 }}>NO</div>
+      <div style={{ display:"grid", gridTemplateColumns:"30px 1fr 90px 56px 44px", gap:0, background:C.cardHi, borderRadius:"10px 10px 0 0", padding:"8px 10px", marginBottom:1 }}>
+        <div style={{ fontSize:10, color:C.faint, fontWeight:700 }}>✓</div>
         <button onClick={()=>setSortCol("name")} style={{ background:"none", border:"none", color:sortCol==="name"?C.accent:C.faint, fontSize:10, fontWeight:700, textAlign:"left", cursor:"pointer", padding:0 }}>
           NAMA {sortCol==="name"&&"↑"}
         </button>
@@ -1345,18 +1450,25 @@ function CatatanView({ items, onEdit }) {
       {/* List */}
       <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
         {list.length === 0 ? (
-          <div style={{ textAlign:"center", padding:"32px 20px", color:C.faint, fontSize:13 }}>Tidak ada barang</div>
+          <div style={{ textAlign:"center", padding:"32px 20px", color:C.faint, fontSize:13 }}>
+            {hideCatat && totalCount>0 ? "Semua sudah dicatat! 🎉" : "Tidak ada barang"}
+          </div>
         ) : list.map((item, idx) => {
           const sl = statusLabel(item);
           const isOdd = idx % 2 === 0;
+          const done = !!item.dicatat;
           return (
-            <div key={item.id} style={{ display:"grid", gridTemplateColumns:"32px 1fr 90px 56px 44px", gap:0, padding:"9px 10px", background:isOdd?"transparent":"rgba(255,255,255,.02)", borderBottom:idx<list.length-1?`1px solid ${C.line}`:"none", alignItems:"center" }}>
-              {/* No */}
-              <div style={{ fontSize:10.5, color:C.faint, fontVariantNumeric:"tabular-nums" }}>{idx+1}</div>
+            <div key={item.id} style={{ display:"grid", gridTemplateColumns:"30px 1fr 90px 56px 44px", gap:0, padding:"9px 10px", background:done?"rgba(52,211,153,.05)":isOdd?"transparent":"rgba(255,255,255,.02)", borderBottom:idx<list.length-1?`1px solid ${C.line}`:"none", alignItems:"center", opacity:done?0.55:1, transition:"opacity .2s,background .2s" }}>
+              {/* Checkbox */}
+              <div onClick={()=>onToggleCatat(item.id)} style={{ cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <div style={{ width:20, height:20, borderRadius:6, border:`2px solid ${done?C.green:C.line}`, background:done?C.green:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  {done && <span style={{ color:"#08090D", fontSize:12, fontWeight:900 }}>✓</span>}
+                </div>
+              </div>
 
               {/* Nama + barcode */}
-              <div style={{ minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", lineHeight:1.3 }}>{item.name}</div>
+              <div style={{ minWidth:0 }} onClick={()=>onToggleCatat(item.id)}>
+                <div style={{ fontSize:13, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", lineHeight:1.3, textDecoration:done?"line-through":"none" }}>{item.name}</div>
                 <div style={{ fontSize:10, color:C.faint, fontFamily:"ui-monospace,monospace", marginTop:1 }}>{item.barcode}</div>
               </div>
 
@@ -1391,12 +1503,11 @@ function CatatanView({ items, onEdit }) {
 
       {/* Footer count */}
       <div style={{ textAlign:"center", marginTop:10, fontSize:11.5, color:C.faint }}>
-        {list.length} barang · {new Date().toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}
+        {list.length} ditampilkan · {new Date().toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}
       </div>
     </div>
   );
 }
-
 
 // ─── Splash Screen ────────────────────────────────────────────────────────────
 function SplashScreen({ onDone }) {
@@ -1944,6 +2055,10 @@ export default function App() {
     setRaw(p=>p.map(i=>i.id===id?{...i,returned:false,returnedAt:null,returNote:""}:i));
     t_("Retur dibatalkan");
   };
+  const onToggleCatat = id => {
+    setRaw(p=>p.map(i=>i.id===id?{...i,dicatat:!i.dicatat}:i));
+    if(navigator.vibrate) navigator.vibrate(25);
+  };
   const onDel = id  => { if(!confirm("Hapus barang ini?"))return; setRaw(p=>p.filter(i=>i.id!==id)); t_("Barang dihapus"); };
 
   const cardProps = { onMd, onQty, onPull, onRet, onBatalRetur, onEdit:openEdit, onDel };
@@ -2079,7 +2194,7 @@ export default function App() {
         {tab==="gondola" && <GondolaMapView items={items} onFilter={handleGondolaFilter}/>}
         {tab==="analytics" && <Analytics items={items}/>}
         {tab==="jadwal" && <JadwalCekView/>}
-        {tab==="catatan" && <CatatanView items={raw.map(enrich)} onEdit={openEdit}/>}
+        {tab==="catatan" && <CatatanView items={raw.map(enrich)} onEdit={openEdit} onToggleCatat={onToggleCatat}/>}
         {tab==="laporan" && <LaporanView items={raw} onBatalRetur={onBatalRetur}/>}
 
         {(tab==="today"||tab==="all") && (
