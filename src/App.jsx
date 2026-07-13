@@ -421,11 +421,29 @@ function GondolaPicker({ gondola, section, onChange }) {
 
 // ─── Gondola Map View ────────────────────────────────────────────────────────
 const DENAH_KEY = "expt_denah_photo";
+const DENAH_PINS_KEY = "expt_denah_pins"; // { "D1": {x:12.5, y:8.3}, ... } dalam persen
+
+function loadDenahPins() {
+  try { const raw = localStorage.getItem(DENAH_PINS_KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+}
+function saveDenahPins(pins) {
+  try { localStorage.setItem(DENAH_PINS_KEY, JSON.stringify(pins)); } catch {}
+}
 
 function DenahUpload() {
-  const [photo, setPhoto] = useState(()=>{ try{return localStorage.getItem(DENAH_KEY);}catch{return null;} });
+  const [photo, setPhoto]   = useState(()=>{ try{return localStorage.getItem(DENAH_KEY);}catch{return null;} });
   const [showFull, setShowFull] = useState(false);
+  const [pins, setPins]     = useState(loadDenahPins);
+  const [pinMode, setPinMode] = useState(false); // mode tandai posisi
+  const [pinTarget, setPinTarget] = useState(""); // nama sub-bagian yang lagi ditandai
+  const [checkLog, setCheckLog] = useState(loadCheckLog);
   const fileRef = useRef(null);
+  const imgRef = useRef(null);
+
+  const today = todayKey();
+  const todayLog = checkLog[today] || {};
+
+  useEffect(()=>saveCheckLog(checkLog), [checkLog]);
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
@@ -439,14 +457,46 @@ function DenahUpload() {
   };
 
   const removePhoto = () => {
-    if (!confirm("Hapus foto denah?")) return;
-    try { localStorage.removeItem(DENAH_KEY); } catch {}
-    setPhoto(null);
+    if (!confirm("Hapus foto denah? Semua titik yang sudah ditandai juga akan hilang.")) return;
+    try { localStorage.removeItem(DENAH_KEY); localStorage.removeItem(DENAH_PINS_KEY); } catch {}
+    setPhoto(null); setPins({});
   };
+
+  // Tap di foto saat mode pin aktif → simpan koordinat
+  const handleImageTap = (e) => {
+    if (!pinMode || !pinTarget) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    const next = { ...pins, [pinTarget]: { x, y } };
+    setPins(next);
+    saveDenahPins(next);
+    if(navigator.vibrate) navigator.vibrate(25);
+  };
+
+  const removePin = (section) => {
+    const next = { ...pins };
+    delete next[section];
+    setPins(next);
+    saveDenahPins(next);
+  };
+
+  const toggleCheckFromDenah = (section) => {
+    setCheckLog(prev => {
+      const dayData = { ...(prev[today]||{}) };
+      dayData[section] = !dayData[section];
+      if(navigator.vibrate) navigator.vibrate(30);
+      return { ...prev, [today]: dayData };
+    });
+  };
+
+  // Semua sub-bagian dari semua gondola, buat pilihan target pin
+  const allSections = Object.entries(SECTIONS).flatMap(([g,secs])=>secs.map(s=>({gondola:g,section:s})));
+  const unpinnedSections = allSections.filter(({section})=>!pins[section]);
 
   return (
     <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:14, padding:"13px 14px", marginBottom:14 }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:photo?10:0 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:photo?10:0, flexWrap:"wrap", gap:6 }}>
         <div style={{ fontWeight:700, fontSize:12.5, color:C.sub }}>📋 Denah Gondola</div>
         <div style={{ display:"flex", gap:6 }}>
           <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display:"none" }}/>
@@ -454,26 +504,92 @@ function DenahUpload() {
             {photo ? "Ganti" : "+ Upload Foto"}
           </button>
           {photo && (
-            <button onClick={removePhoto} style={{ background:"transparent", border:`1px solid ${C.line}`, color:C.faint, padding:"6px 12px", borderRadius:8, fontSize:11.5, cursor:"pointer" }}>
-              Hapus
-            </button>
+            <>
+              <button onClick={()=>{setPinMode(p=>!p); setPinTarget("");}} style={{ background:pinMode?C.amberDim:"transparent", border:`1px solid ${pinMode?C.amberBorder:C.line}`, color:pinMode?C.amber:C.faint, padding:"6px 12px", borderRadius:8, fontSize:11.5, fontWeight:600, cursor:"pointer" }}>
+                {pinMode ? "✓ Selesai Tandai" : "📍 Tandai Posisi"}
+              </button>
+              <button onClick={removePhoto} style={{ background:"transparent", border:`1px solid ${C.line}`, color:C.faint, padding:"6px 12px", borderRadius:8, fontSize:11.5, cursor:"pointer" }}>
+                Hapus
+              </button>
+            </>
           )}
         </div>
       </div>
-      {photo && (
-        <img
-          src={photo}
-          onClick={()=>setShowFull(true)}
-          style={{ width:"100%", borderRadius:10, cursor:"pointer", display:"block" }}
-          alt="Denah gondola"
-        />
+
+      {/* Mode pin: pilih target section dulu */}
+      {photo && pinMode && (
+        <div style={{ background:C.amberDim, border:`1px solid ${C.amberBorder}`, borderRadius:10, padding:"10px 12px", marginBottom:10 }}>
+          {pinTarget ? (
+            <div style={{ fontSize:12, color:C.amber, fontWeight:600 }}>
+              👉 Tap posisi <b>{pinTarget}</b> di foto di bawah
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize:11.5, color:C.amber, fontWeight:600, marginBottom:7 }}>Pilih sub-bagian yang mau ditandai:</div>
+              <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                {unpinnedSections.length===0 ? (
+                  <span style={{ fontSize:11.5, color:C.faint }}>✓ Semua sub-bagian sudah ditandai posisinya</span>
+                ) : unpinnedSections.map(({gondola,section})=>(
+                  <button key={section} onClick={()=>setPinTarget(section)} style={{ background:GONDOLAS[gondola].dim, border:`1px solid ${GONDOLAS[gondola].border}`, color:GONDOLAS[gondola].color, padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer" }}>
+                    {section}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
+
+      {photo && (
+        <div style={{ position:"relative", borderRadius:10, overflow:"hidden" }}>
+          <img
+            ref={imgRef}
+            src={photo}
+            onClick={pinMode ? handleImageTap : ()=>setShowFull(true)}
+            style={{ width:"100%", display:"block", cursor:pinMode?"crosshair":"pointer" }}
+            alt="Denah gondola"
+          />
+          {/* Overlay pins */}
+          {Object.entries(pins).map(([section, pos]) => {
+            const gondola = section.match(/^[A-Z]/)?.[0];
+            const g = GONDOLAS[gondola];
+            const isChecked = !!todayLog[section];
+            return (
+              <div
+                key={section}
+                onClick={(e)=>{ e.stopPropagation(); if(pinMode){removePin(section);} else {toggleCheckFromDenah(section);} }}
+                style={{
+                  position:"absolute", left:`${pos.x}%`, top:`${pos.y}%`, transform:"translate(-50%,-50%)",
+                  width:26, height:26, borderRadius:7, cursor:"pointer",
+                  background: isChecked ? C.green : (g?.color||C.accent),
+                  border:"2px solid rgba(255,255,255,.9)",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:9.5, fontWeight:900, color:"#08090D",
+                  boxShadow:"0 2px 8px rgba(0,0,0,.4)",
+                  transition:"background .2s",
+                }}
+                title={section}
+              >
+                {isChecked ? "✓" : section.replace(/^[A-Z]/,"")}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {!photo && (
         <div style={{ fontSize:11.5, color:C.faint, textAlign:"center", padding:"14px 0" }}>
           Belum ada foto denah. Upload untuk referensi visual layout gondola.
         </div>
       )}
-      {showFull && (
+
+      {photo && !pinMode && Object.keys(pins).length>0 && (
+        <div style={{ fontSize:10.5, color:C.faint, marginTop:8, textAlign:"center" }}>
+          💡 Tap kotak di denah untuk tandai sudah dicek — otomatis sinkron dengan tab Jadwal Cek
+        </div>
+      )}
+
+      {showFull && !pinMode && (
         <div onClick={()=>setShowFull(false)} style={{ position:"fixed", inset:0, zIndex:600, background:"rgba(0,0,0,.9)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
           <img src={photo} style={{ maxWidth:"100%", maxHeight:"90vh", borderRadius:12 }} alt="Denah gondola full"/>
         </div>
