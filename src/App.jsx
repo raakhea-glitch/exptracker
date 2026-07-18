@@ -1485,6 +1485,7 @@ function CatatanView({ items, onEdit, onToggleCatat }) {
       if (sortCol === "exp")     return a.days - b.days;
       if (sortCol === "name")    return a.name.localeCompare(b.name);
       if (sortCol === "disc")    return b.md.pct - a.md.pct;
+      if (sortCol === "input")   return new Date(b.addedAt||0) - new Date(a.addedAt||0); // terbaru dulu
       return 0;
     });
 
@@ -1538,6 +1539,9 @@ function CatatanView({ items, onEdit, onToggleCatat }) {
         <button onClick={()=>setHideCatat(p=>!p)} style={{ background:hideCatat?C.greenDim:C.card, border:`1px solid ${hideCatat?C.greenBorder:C.line}`, color:hideCatat?C.green:C.sub, padding:"5px 11px", borderRadius:8, fontSize:11.5, fontWeight:600, cursor:"pointer", marginLeft:"auto" }}>
           {hideCatat ? "✓ Sembunyikan yg dicatat" : "Tampilkan semua"}
         </button>
+        <button onClick={()=>setSortCol("input")} style={{ background:sortCol==="input"?C.accentDim:C.card, border:`1px solid ${sortCol==="input"?C.accentBorder:C.line}`, color:sortCol==="input"?C.accent:C.sub, padding:"5px 11px", borderRadius:8, fontSize:11.5, fontWeight:600, cursor:"pointer" }}>
+          📅 Terbaru Diinput
+        </button>
       </div>
 
       {/* Search */}
@@ -1586,6 +1590,9 @@ function CatatanView({ items, onEdit, onToggleCatat }) {
               <div style={{ minWidth:0 }} onClick={()=>onToggleCatat(item.id)}>
                 <div style={{ fontSize:13, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", lineHeight:1.3, textDecoration:done?"line-through":"none" }}>{item.name}</div>
                 <div style={{ fontSize:10, color:C.faint, fontFamily:"ui-monospace,monospace", marginTop:1 }}>{item.barcode}</div>
+                <div style={{ fontSize:9.5, color:C.faint, marginTop:2 }}>
+                  📅 Input: {item.addedAt ? new Date(item.addedAt).toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"2-digit"}) : "—"}
+                </div>
               </div>
 
               {/* Exp date + sisa hari */}
@@ -2130,8 +2137,14 @@ export default function App() {
 
   const saveItem = data => {
     if(navigator.vibrate) navigator.vibrate(35);
-    if (data.id) { setRaw(p=>p.map(i=>i.id===data.id?{...i,...data}:i)); t_("Perubahan disimpan"); }
-    else          { setRaw(p=>[{...data,id:Date.now(),markedDown:false},...p]); t_("Barang ditambahkan"); }
+    const now = new Date().toISOString();
+    if (data.id) {
+      setRaw(p=>p.map(i=>i.id===data.id?{...i,...data,updatedAt:now}:i));
+      t_("Perubahan disimpan");
+    } else {
+      setRaw(p=>[{...data,id:Date.now(),markedDown:false,addedAt:now,updatedAt:now},...p]);
+      t_("Barang ditambahkan");
+    }
     close();
   };
 
